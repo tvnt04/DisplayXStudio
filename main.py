@@ -40,10 +40,7 @@ except Exception:
         pass
 
 
-try:
-    from Live_Display_AppVZ import VideoModeHandler
-except ImportError:
-    VideoModeHandler = None  
+
 try:
     from video_mode import PlaybackApp
 except ImportError:
@@ -281,9 +278,7 @@ class ModeSelectionDialog(QDialog):
         self.mode_group.addButton(self.video_radio)
         select_layout.addWidget(self.video_radio)
 
-        self.live_radio = QRadioButton("Live Display Mode")
-        self.mode_group.addButton(self.live_radio)
-        select_layout.addWidget(self.live_radio)
+
 
         self.tiled_radio = QRadioButton("Tiled Mode")
         self.mode_group.addButton(self.tiled_radio)
@@ -317,15 +312,13 @@ class ModeSelectionDialog(QDialog):
         layout.addLayout(buttons)
 
     def get_selected_mode(self):
-        """Return the selected mode: 'band', 'raw', 'video', 'live', or 'tiled'."""
+        """Return the selected mode: 'band', 'raw', 'video', or 'tiled'."""
         if self.band_radio.isChecked():
             return "band"
         elif self.raw_radio.isChecked():
             return "raw"
         elif self.video_radio.isChecked():
             return "video"
-        elif self.live_radio.isChecked():
-            return "live"
         elif self.tiled_radio.isChecked():
             return "tiled"
         return "band"  # Fallback
@@ -559,9 +552,7 @@ class MainApp(QMainWindow):
 
 
 
-        add_live_btn = QPushButton("Live Tab")
-        add_live_btn.setToolTip("Open live tab")
-        add_live_btn.clicked.connect(self.add_live_tab)
+
         self._top_right_controls = QHBoxLayout()
         self._top_right_controls.setContentsMargins(0, 0, 0, 0)
         self._top_right_controls.setSpacing(6)
@@ -600,7 +591,7 @@ class MainApp(QMainWindow):
         self.display_menu_button.setMenu(self.display_menu)
         button_layout.addStretch()
 
-        self._top_right_controls.addWidget(add_live_btn)
+
         self._top_right_controls.addWidget(self.display_menu_button)
 
         self.add_new_tab()
@@ -1159,20 +1150,7 @@ class MainApp(QMainWindow):
                 except Exception:
                     pass
 
-            # Live mode 
-                try:
-                    if VideoModeHandler is not None:
-                        vm = widget.findChild(VideoModeHandler)
-                        if vm:
-                            st = {}
-                            try:
-                                if hasattr(vm, 'save_state'):
-                                    st = vm.save_state()
-                            except Exception:
-                                st = {}
-                            data['modes']['live'].append({'title': title, 'state': st, 'screen': screen_name})
-                except Exception:
-                    pass
+
 
             # Tiled mode 
                 try:
@@ -1223,12 +1201,7 @@ class MainApp(QMainWindow):
                             current_mode = 'video'
                     except Exception:
                         pass
-                if current_mode is None:
-                    try:
-                        if VideoModeHandler is not None and cur_widget.findChild(VideoModeHandler):
-                            current_mode = 'live'
-                    except Exception:
-                        pass
+
                 if current_mode is None:
                     try:
                         if TiledDisplay is not None and cur_widget.findChild(TiledDisplay):
@@ -1279,20 +1252,7 @@ class MainApp(QMainWindow):
                     idx_tab = self.tab_widget.indexOf(container)
                     if idx_tab != -1:
                         self.tab_widget.setTabText(idx_tab, title)
-                elif current_mode == 'live':
-                    container = cur_widget
-                    app = container.findChild(VideoModeHandler) if (container and VideoModeHandler is not None) else None
-                    if app and hasattr(app, 'load_state'):
-                        try:
-                            app.load_state(state)
-                        except Exception:
-                            pass
-                    else:
-                        QMessageBox.information(self, "Restore", "Current tab cannot load Live state.")
-                        return
-                    idx_tab = self.tab_widget.indexOf(container)
-                    if idx_tab != -1:
-                        self.tab_widget.setTabText(idx_tab, title)
+
                 elif current_mode == 'tiled':
                     container = cur_widget
                     app = container.findChild(TiledDisplay) if (container and TiledDisplay is not None) else None
@@ -1475,13 +1435,7 @@ class MainApp(QMainWindow):
                 except Exception:
                     pass
             
-            # Check for VideoModeHandler (live display)
-            elif hasattr(widget, 'video_mode'):
-                # This is a VideoModeHandler - call its on_close logic
-                try:
-                    widget.on_close()
-                except Exception:
-                    pass
+
             
             # For any widget, stop threads as safety net
             self._stop_threads_in_widget(widget)
@@ -1699,8 +1653,7 @@ class MainApp(QMainWindow):
             self._add_raw_tab(target)
         elif mode == "video":
             self._add_video_tab(target)
-        elif mode == "live":
-            self._add_live_tab(target)
+
         elif mode == "tiled":
             self._add_tiled_tab(target)
 
@@ -1817,153 +1770,7 @@ class MainApp(QMainWindow):
                 self.close_tab(index, tab_widget=host)
                 return
     
-    def add_live_tab(self, target_tab_widget=None):
-        live_widget = QWidget()
-        layout = QVBoxLayout()
-        live_widget.setLayout(layout)
-        content = QWidget(live_widget)
-        content_layout = QVBoxLayout()
-        content.setLayout(content_layout)
-        content_layout.addWidget(QLabel("Live Display"))
 
-        if VideoModeHandler:
-            video_mode = VideoModeHandler(content, filepath=None)
-            video_mode._main_app = self
-            content_layout.addWidget(video_mode)
-        else:
-            content_layout.addWidget(QLabel("Live Display: Module not available"))
-
-        self._attach_bottom_terminal(live_widget, layout, content)
-
-        target_host = target_tab_widget or self.tab_widget
-        dataset_app = None
-        cur = self._current_host_widget(preferred_host=target_host)
-
-        if cur and cur.__class__.__name__ == "BandStitchProApp":
-            dataset_app = cur
-        else:
-            for host in [target_host] + [h for h in self._all_tab_hosts() if h is not target_host]:
-                for i in range(host.count()):
-                    candidate = host.widget(i)
-                    if candidate and candidate.__class__.__name__ == "BandStitchProApp":
-                        dataset_app = candidate
-                        break
-                if dataset_app is not None:
-                    break
-
-        if dataset_app is None:
-            self._insert_real_tab(live_widget, "Live Display", target_host)
-            return
-
-        try:
-            notebook = getattr(dataset_app, 'individual_bands_notebook', None)
-            if notebook:
-                while notebook.count():
-                    widget = notebook.widget(0)
-                    notebook.removeTab(0)
-                    try:
-                        widget.deleteLater()
-                    except Exception:
-                        pass
-
-
-            gc.collect()
-
-            band_checkbox_layout = getattr(dataset_app, 'band_checkbox_layout', None)
-            if band_checkbox_layout:
-                while band_checkbox_layout.count():
-                    item = band_checkbox_layout.takeAt(0)
-                    if item and item.widget():
-                        try:
-                            item.widget().deleteLater()
-                        except Exception:
-                            pass
-
-            band_frames = getattr(dataset_app, 'band_frames', None)
-            if not band_frames:
-                self._insert_real_tab(live_widget, "Live Display", target_host)
-                return
-
-            band_enabled_map = getattr(dataset_app, 'band_enabled', {}) or {}
-            for key in sorted(band_frames.keys()):
-                cb = QCheckBox(f"Band {key[1:]}")
-                prev_checked = False
-                prev_cb = band_enabled_map.get(key)
-                try:
-                    prev_checked = bool(prev_cb.isChecked())
-                except Exception:
-                    prev_checked = False
-                cb.setChecked(prev_checked)
-                cb.stateChanged.connect(lambda state, k=key: dataset_app.toggle_band(k, state) if hasattr(dataset_app, 'toggle_band') else None)
-                if band_checkbox_layout:
-                    band_checkbox_layout.addWidget(cb)
-
-            # Handle pan checkbox if applicable
-            unbinned_keys_for_check = [k for k in band_frames.keys() if k.endswith(('_left', '_right'))]
-            if unbinned_keys_for_check:
-                pan_cb = QCheckBox("Pan")
-                prev_pan_checked = False
-                prev_pan = band_enabled_map.get("pan")
-                try:
-                    prev_pan_checked = bool(prev_pan.isChecked())
-                except Exception:
-                    prev_pan_checked = False
-                pan_cb.setChecked(prev_pan_checked)
-                pan_cb.stateChanged.connect(lambda state: dataset_app.toggle_band("pan", state) if hasattr(dataset_app, 'toggle_band') else None)
-                if band_checkbox_layout:
-                    band_checkbox_layout.addWidget(pan_cb)
-                # store back on dataset_app if needed
-                try:
-                    dataset_app.band_enabled["pan"] = pan_cb
-                except Exception:
-                    pass
-
-            if band_checkbox_layout:
-                band_checkbox_layout.addStretch()
-
-            # Build list of checked keys and placeholder tabs (lazy loaded)
-            keys = []
-            for k in sorted(band_frames.keys()):
-                cb = dataset_app.band_enabled.get(k) if hasattr(dataset_app, 'band_enabled') else None
-                if cb is not None and getattr(cb, 'isChecked', lambda: False)() and band_frames.get(k) is not None:
-                    keys.append(k)
-
-            dataset_app.individual_band_keys = keys
-
-            # Add placeholder tabs for checked keys
-            notebook = getattr(dataset_app, 'individual_bands_notebook', None)
-            if notebook:
-                for i, key in enumerate(keys):
-                    placeholder = QWidget()
-                    placeholder.setObjectName("placeholder")
-                    placeholder.key = key
-                    base_key = key.rsplit('_', 1)[0] if '_' in key else key
-                    side = key.split('_')[-1] if '_' in key else ''
-                    tab_text = f"Band {base_key[1:]} {side}".strip()
-                    notebook.addTab(placeholder, tab_text)
-
-                # Add pan tab if applicable
-                unbinned_keys = [k for k in keys if k.endswith(('_left', '_right'))]
-                if unbinned_keys and dataset_app.band_enabled.get("pan") and dataset_app.band_enabled["pan"].isChecked():
-                    placeholder = QWidget()
-                    placeholder.setObjectName("pan_placeholder")
-                    placeholder.unbinned_keys = unbinned_keys
-                    notebook.addTab(placeholder, "Pan")
-
-                # connect lazy loader if not connected already
-                if not getattr(dataset_app, '_individual_connected', False):
-                    try:
-                        notebook.currentChanged.connect(dataset_app.lazy_load_individual_tab)
-                    except Exception:
-                        pass
-                    dataset_app._individual_connected = True
-
-        except Exception as e:
-            # don't raise UI-level exceptions; log to console
-            print("add_live_tab (safe) encountered:", e)
-
-        # finally add the live tab to main tab widget
-        self._insert_real_tab(live_widget, "Live Display", target_host)
 
     def add_video_tab(self, folder: str = None, width: int = None,
                       height: int = None, bitdepth: int = None):
@@ -2081,52 +1888,11 @@ class MainApp(QMainWindow):
             widget.tdi_worker.requestInterruption()
             widget.tdi_worker.wait()
         
-        video_mode = None
-        if VideoModeHandler and hasattr(widget, "findChild"):
-            video_mode = widget.findChild(VideoModeHandler)
-        
-        if video_mode:
-            if video_mode.connected:
-                # Trigger disconnect logic
-                video_mode.connectCamera()
-            
-            # Show countdown dialog
-            owner = self.secondary_window if (self.secondary_window is not None and host is self.secondary_window.tab_widget) else self
-            progress = QProgressDialog("Safely closing Live Display...\nRemaining: 2 seconds", None, 0, 2, owner)
-            progress.setWindowModality(Qt.WindowModal)
-            progress.setMinimumDuration(0)
-            progress.setValue(0)
-            progress.setCancelButton(None)  # No cancel button
-            progress.show()
-            progress.setAutoReset(False)
-            progress.setAutoClose(False)
-            
-            # Timer for countdown
-            timer = QTimer(self)
-            def update_progress():
-                progress.setValue(progress.value() + 1)
-                remaining = progress.maximum() - progress.value()
-                sec_text = "second" if remaining == 1 else "seconds"
-                if remaining > 0:
-                    progress.setLabelText(f"Safely closing Live Display...\nRemaining: {remaining} {sec_text}")
-                else:
-                    progress.setLabelText("Safely closing Live Display...\nClosing now.")
-                
-                if progress.value() >= progress.maximum():
-                    timer.stop()
-                    if hasattr(video_mode, 'process') and video_mode.process and video_mode.process.poll() is None:
-                        video_mode.process.kill()
-                    finalize_close()
-                    progress.close()
-            
-            timer.timeout.connect(update_progress)
-            timer.start(1000)
-        else:
-            if PlaybackApp and hasattr(widget, "findChild"):
-                playback_app = widget.findChild(PlaybackApp)
-                if playback_app:
-                    playback_app.closeEvent(QCloseEvent())
-            finalize_close()
+        if PlaybackApp and hasattr(widget, "findChild"):
+            playback_app = widget.findChild(PlaybackApp)
+            if playback_app:
+                playback_app.closeEvent(QCloseEvent())
+        finalize_close()
 
 if __name__ == "__main__":
     install_toast_message_box_hook()
