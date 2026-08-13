@@ -21,14 +21,7 @@ import math
 import concurrent.futures  
 import re
 
-try:
-    from iris2.event_bus import bus, AppEvent, EventType
-    _HAS_IRIS_BUS = True
-except Exception:
-    bus = None
-    AppEvent = None
-    EventType = None
-    _HAS_IRIS_BUS = False
+
 
 class HistogramWorker(QThread):
     finished = pyqtSignal(dict)  
@@ -273,9 +266,7 @@ class HistogramViewer(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        # Iris context (optional): set by caller when histogram is updated
-        self._iris_folder = ""
-        self._iris_frame_index = 0
+
 
         main_layout = QVBoxLayout()
         main_layout.setContentsMargins(2, 2, 2, 2)
@@ -1499,45 +1490,7 @@ class HistogramViewer(QWidget):
         return stats
 
     def _emit_histogram_state(self, payload):
-        if not _HAS_IRIS_BUS:
-            return
-        if not payload:
-            return
-
-        display_mode = "frame_range" if str(self.frame_mode).lower().startswith("range") else "single_frame"
-        visible = None
-        selected = set(getattr(self, "_selected_bands", set()))
-        if selected:
-            visible = self._sorted_band_refs(selected)
-        else:
-            visible = self._sorted_band_refs(self._curves.keys())
-
-        overall_min, overall_max = getattr(self, "_overall_minmax", (None, None))
-        frame_min = overall_min if overall_min is not None else self.min_val
-        frame_max = overall_max if overall_max is not None else self.max_val
-
-        payload_stats = self._build_band_stats(payload)
-
-        try:
-            bus.emit(AppEvent(
-                EventType.HISTOGRAM_UPDATED,
-                {
-                    "folder":        self._iris_folder,
-                    "frame_index":   int(self._iris_frame_index),
-                    "display_mode":  display_mode,
-                    "range_start":   int(self.start_frame),
-                    "range_end":     int(self.end_frame),
-                    "axis_min":      float(self.min_val),
-                    "axis_max":      float(self.max_val),
-                    "frame_min":     float(frame_min) if frame_min is not None else 0.0,
-                    "frame_max":     float(frame_max) if frame_max is not None else 0.0,
-                    "visible_bands": visible,
-                    "band_stats":    payload_stats,
-                },
-                source="histogram_viewer"
-            ))
-        except Exception:
-            pass
+        pass
 
     def update_histogram(self, band_frames, current_frame_index, frame_mode, start_frame=None, end_frame=None, smooth=True, ignore_extremes=True, folder: str = ""):
         self._reset_plot_data()
@@ -1552,9 +1505,7 @@ class HistogramViewer(QWidget):
         self.frame_mode = frame_mode
         self.start_frame = start_frame if start_frame is not None else current_frame_index
         self.end_frame = end_frame if end_frame is not None else current_frame_index
-        self._iris_frame_index = int(current_frame_index)
-        if folder:
-            self._iris_folder = str(folder)
+
 
         if getattr(self, 'worker', None):
             try:

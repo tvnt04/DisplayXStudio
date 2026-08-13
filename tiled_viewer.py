@@ -602,16 +602,7 @@ class TiledDisplay(QWidget):
                 self.lbl_status.setText(f"Loaded {len(self.original_tiles_per_frame)} frames")
                 self.update_frame_label()
                 self.show_frame()
-                try:
-                    main_app = getattr(self, '_main_app', None)
-                    if main_app and getattr(main_app, 'iris', None):
-                        tab_index = main_app.find_tab_index(self)
-                        session_folder = self.settings.get('session', '')
-                        frame_count = len(self.original_tiles_per_frame)
-                        main_app.iris.notify_dataset_loaded(
-                            tab_index, session_folder, frame_count, 0, {}, self)
-                except Exception as e:
-                    print(f"[Iris2] tiled notify error: {e}")
+
 
                 self.play_btn.setEnabled(len(self.original_tiles_per_frame) > 1)
                 if not self.play_btn.isEnabled() and self.is_playing:
@@ -772,13 +763,7 @@ class TiledDisplay(QWidget):
         if self.chk_tile_tab.isChecked():
             self.tile_frame_tabs.setCurrentIndex(self.current_frame)
             self.display_tile(self.current_frame, self.current_tile_per_frame[self.current_frame])
-        try:
-            main_app = getattr(self, '_main_app', None)
-            if main_app and getattr(main_app, 'iris', None):
-                tab_index = main_app.find_tab_index(self)
-                main_app.iris.notify_frame_changed(tab_index, v)
-        except Exception:
-            pass
+
 
     def update_frame_label(self):
         self.lbl_frame.setText(f"Frame {self.current_frame + 1} / {len(self.original_tiles_per_frame)}")

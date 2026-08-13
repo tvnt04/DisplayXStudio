@@ -39,11 +39,7 @@ except Exception:
     def install_toast_message_box_hook():
         pass
 
-try:
-    from iris2 import Iris
-except Exception as _e:
-    print(f"[Iris2] Not available: {_e}")
-    Iris = None
+
 try:
     from Live_Display_AppVZ import VideoModeHandler
 except ImportError:
@@ -561,13 +557,7 @@ class MainApp(QMainWindow):
         except Exception:
             pass
 
-        # Initialize Iris EARLY (before add_new_tab is called)
-        self.iris = None
-        if Iris is not None:
-            try:
-                self.iris = Iris(self)
-            except Exception as e:
-                print(f"Iris disabled: {e}")
+
 
         add_live_btn = QPushButton("Live Tab")
         add_live_btn.setToolTip("Open live tab")
@@ -609,8 +599,7 @@ class MainApp(QMainWindow):
 
         self.display_menu_button.setMenu(self.display_menu)
         button_layout.addStretch()
-        if getattr(self, "iris", None) is not None:
-            self._top_right_controls.addWidget(self.iris.button)
+
         self._top_right_controls.addWidget(add_live_btn)
         self._top_right_controls.addWidget(self.display_menu_button)
 
@@ -1092,22 +1081,7 @@ class MainApp(QMainWindow):
         if index < 0 or host is None:
             return
 
-        if self.iris:
-            widget = host.widget(index)
-            mode = "band"
-            if hasattr(widget, "band_frames"):
-                mode = "band"
-            elif RawViewer is not None and hasattr(widget, "findChild") and widget.findChild(RawViewer):
-                mode = "raw"
-            elif PlaybackApp is not None and hasattr(widget, "findChild") and widget.findChild(PlaybackApp):
-                mode = "video"
-            elif VideoModeHandler is not None and hasattr(widget, "findChild") and widget.findChild(VideoModeHandler):
-                mode = "live"
-            elif hasattr(widget, "original_tiles_per_frame"):
-                mode = "tiled"
-            elif TiledDisplay is not None and hasattr(widget, "findChild") and widget.findChild(TiledDisplay):
-                mode = "tiled"
-            self.iris.notify_tab_activated(index, widget, mode)
+
 
         for tab_host in self._all_tab_hosts():
             for i in range(tab_host.count()):
@@ -1117,59 +1091,7 @@ class MainApp(QMainWindow):
                 if hasattr(app, 'view_cache'):
                     app.view_cache.clear()
 
-    def _trigger_iris_analysis(self, widget):
-        """Trigger Iris background analysis on folder load."""
-        try:
-            if not self.iris or not hasattr(self.iris, 'analyze_folder_on_load'):
-                return
-            
-            # Try to extract folder path from widget
-            folder_path = None
-            if isinstance(widget, BandStitchProApp):
-                if hasattr(widget, 'current_folder') and widget.current_folder:
-                    folder_path = widget.current_folder
-            
-            if folder_path:
-                # remember the path so Iris can answer follow-ups even if the
-                # UI later loses a reference to this widget
-                try:
-                    self.iris._last_loaded_folder = folder_path
-                except Exception:
-                    pass
-                self.iris.analyze_folder_on_load(folder_path)
-        except Exception as e:
-            print(f"[Iris] Folder analysis trigger error: {e}")
 
-    def _trigger_iris_frame_analysis(self, widget, frame_index=None):
-        """Send current frame sample to Iris for live anomaly checks."""
-        try:
-            if not self.iris or not hasattr(self.iris, 'on_frame_changed'):
-                return
-            if widget is None or not isinstance(widget, BandStitchProApp):
-                return
-
-            # Resolve frame index
-            idx = frame_index
-            if idx is None:
-                idx = getattr(widget, "current_frame_index", 0)
-            try:
-                idx = int(idx)
-            except Exception:
-                idx = 0
-
-            band_frames = getattr(widget, "band_frames", None) or {}
-            if not band_frames:
-                return
-            keys = [k for k in sorted(band_frames.keys()) if band_frames.get(k) is not None]
-            if not keys:
-                return
-            frames = band_frames.get(keys[0])
-            if frames is None or idx < 0 or idx >= len(frames):
-                return
-            frame_array = frames[idx]
-            self.iris.on_frame_changed(idx, frame_array)
-        except Exception as e:
-            print(f"[Iris] Frame analysis trigger error: {e}")
 
     def save_session(self):
         data = {
@@ -1786,20 +1708,7 @@ class MainApp(QMainWindow):
         """Create a new Band Mode tab."""
         app = BandStitchProApp(main_app=self)
         tab_index = self._insert_real_tab(app, "Band Mode", target_tab_widget)
-        if self.iris:
-            self.iris.notify_tab_activated(tab_index, app, "band")
-        
-        # Trigger Iris analysis on folder load (after brief delay for UI)
-        if self.iris:
-            QTimer.singleShot(1000, lambda: self._trigger_iris_analysis(app))
-            # Trigger Iris frame analysis as the frame slider changes.
-            try:
-                if hasattr(app, "frame_slider") and app.frame_slider is not None:
-                    app.frame_slider.valueChanged.connect(
-                        lambda v, w=app: self._trigger_iris_frame_analysis(w, v)
-                    )
-            except Exception as e:
-                print(f"[Iris] Failed to wire frame-slider integration: {e}")
+
 
     def _add_raw_tab(self, target_tab_widget=None):
         """Create a new Raw Mode tab."""
@@ -2138,8 +2047,7 @@ class MainApp(QMainWindow):
                     print(f"[DEBUG] Error closing detached tab widget: {e}")
                 widget.deleteLater()
                 return
-            if self.iris:
-                self.iris.notify_tab_closed(current_index)
+
             try:
                 widget.close()
             except Exception as e:

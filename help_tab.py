@@ -439,54 +439,14 @@ _MODE_BODIES = {
 """,
 }
 
-_IRIS_HTML = """
-<hr/>
-<h3>Iris Assistant</h3>
-<ul>
-  <li><strong>Iris</strong> is available in this build.</li>
-  <li>Use the <strong>Iris</strong> button in the top bar for assistant-driven help and workflow support.</li>
-</ul>
-"""
-
-
-def _detect_iris_file(main_app=None):
-    candidates = []
-    try:
-        candidates.append(os.getcwd())
-    except Exception:
-        pass
-    try:
-        candidates.append(os.path.dirname(__file__))
-    except Exception:
-        pass
-    if main_app is not None:
-        try:
-            candidates.append(os.path.dirname(os.path.abspath(main_app.session_file)))
-        except Exception:
-            pass
-
-    for d in candidates:
-        if not d:
-            continue
-        try:
-            if os.path.exists(os.path.join(d, "iris.py")):
-                return True
-        except Exception:
-            pass
-    return False
-
-
-def _default_help_html(mode="band", include_iris=None, main_app=None):
+def _default_help_html(mode="band", main_app=None):
     key = (mode or "band").strip().lower()
     if key not in _MODE_BODIES:
         key = "band"
-    if include_iris is None:
-        include_iris = _detect_iris_file(main_app=main_app)
 
     title = _MODE_TITLES.get(key, "Help")
     body = _MODE_BODIES.get(key, "")
-    iris_section = _IRIS_HTML if include_iris else ""
-    return f"<h2>{title}</h2><hr/>{body}{iris_section}"
+    return f"<h2>{title}</h2><hr/>{body}"
 
 
 def load_help_file(path):
@@ -506,7 +466,7 @@ def load_help_file(path):
         return None, False
 
 
-def create_help_tab(main_app=None, help_file_path=None, use_html=True, mode="band", include_iris=None):
+def create_help_tab(main_app=None, help_file_path=None, use_html=True, mode="band"):
     w = QWidget()
     layout = QVBoxLayout()
     w.setLayout(layout)
@@ -525,9 +485,9 @@ def create_help_tab(main_app=None, help_file_path=None, use_html=True, mode="ban
             help_text.setPlainText(html_module.unescape(file_content).replace("<br/>\n", "\n"))
     else:
         if use_html:
-            help_text.setHtml(_default_help_html(mode=mode, include_iris=include_iris, main_app=main_app))
+            help_text.setHtml(_default_help_html(mode=mode, main_app=main_app))
         else:
-            help_text.setPlainText(html_module.unescape(_default_help_html(mode=mode, include_iris=include_iris, main_app=main_app)))
+            help_text.setPlainText(html_module.unescape(_default_help_html(mode=mode, main_app=main_app)))
 
     layout.addWidget(help_text)
 
@@ -545,7 +505,7 @@ def create_help_tab(main_app=None, help_file_path=None, use_html=True, mode="ban
                 else:
                     help_text.setPlainText(html_module.unescape(fc).replace("<br/>\n", "\n"))
             else:
-                rendered = _default_help_html(mode=active_mode, include_iris=include_iris, main_app=main_app)
+                rendered = _default_help_html(mode=active_mode, main_app=main_app)
                 if as_html:
                     help_text.setHtml(rendered)
                 else:
