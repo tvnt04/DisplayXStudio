@@ -1,21 +1,15 @@
 # -*- mode: python ; coding: utf-8 -*-
 
-from PyInstaller.utils.hooks import collect_submodules
+from pathlib import Path
 
-APP_NAME = "Display X Studio"
-ENTRY_POINT = "../main.py"
-
-hiddenimports = []
-
-# Keep this initially minimal.
-# We will add anything PyInstaller actually misses after the first build.
+PROJECT_ROOT = Path(SPECPATH).resolve().parent
 
 a = Analysis(
-    [ENTRY_POINT],
-    pathex=[".."],
+    [str(PROJECT_ROOT / "main.py")],
+    pathex=[str(PROJECT_ROOT)],
     binaries=[],
     datas=[],
-    hiddenimports=hiddenimports,
+    hiddenimports=[],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -24,16 +18,14 @@ a = Analysis(
     optimize=0,
 )
 
-pyz = PYZ(
-    a.pure,
-)
+pyz = PYZ(a.pure)
 
 exe = EXE(
     pyz,
     a.scripts,
     [],
     exclude_binaries=True,
-    name=APP_NAME,
+    name="Display X Studio",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -53,5 +45,5 @@ coll = COLLECT(
     strip=False,
     upx=False,
     upx_exclude=[],
-    name=APP_NAME,
+    name="Display X Studio",
 )

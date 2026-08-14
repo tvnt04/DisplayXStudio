@@ -7,7 +7,6 @@ _MODE_TITLES = {
     "band": "Band Mode Help",
     "raw": "Raw Mode Help",
     "video": "Video Mode Help",
-    "live": "Live Display Mode Help",
     "tiled": "Tiled Mode Help",
 }
 
@@ -19,7 +18,6 @@ _MODE_BODIES = {
   <li><strong>Band Mode</strong> — Multi-spectral <code>.bandXX</code> files, stitching, RGB fusion, histogram, full analysis toolkit.</li>
   <li><strong>Raw Mode</strong> — Direct <code>.raw</code> sensor file inspection with frame-by-frame navigation and stack preview.</li>
   <li><strong>Video Mode</strong> — Generate and playback video sequences from bands with RGB composition and speed control.</li>
-  <li><strong>Live Display Mode</strong> — Real-time camera stream capture, recording, and parameter tuning.</li>
   <li><strong>Tiled Mode</strong> — Assemble large frames from matrix of RAW tiles with flexible ordering and stitching.</li>
 </ul>
 <p><strong>Getting Started:</strong> Use <strong>+</strong> button (top-left) to add a new dataset or click mode buttons. Each mode has its own viewer and controls tuned for that data type.</p>
@@ -284,69 +282,6 @@ _MODE_BODIES = {
   <li><strong>Right / Left Arrow</strong> — Next / Previous frame.</li>
   <li><strong>Ctrl + Up / Down</strong> — Zoom in / Zoom out.</li>
   <li><strong>Ctrl + S</strong> — Save settings.</li>
-</ul>
-""",
-    "live": """
-<h3>Live Display Mode — Camera Stream &amp; Capture</h3>
-<hr/>
-
-<h4>Quick Start</h4>
-<ol>
-  <li>Configure <strong>frame width/height, FPS, exposure, gain</strong> parameters.</li>
-  <li>Click <strong>Connect</strong> to establish camera connection.</li>
-  <li>Click <strong>Start Stream</strong> to begin live preview.</li>
-  <li>Select output folder and format; click <strong>Capture</strong> to save frames.</li>
-  <li>Click <strong>Stop Stream</strong> and <strong>Disconnect</strong> when done.</li>
-</ol>
-
-<h4>Camera &amp; Connection</h4>
-<ul>
-  <li><strong>Connect</strong> — Establish connection to camera hardware/pipeline.</li>
-  <li><strong>Disconnect</strong> — Close camera connection and free resources.</li>
-  <li><strong>Status Indicator</strong> — Display connection state and available cameras.</li>
-</ul>
-
-<h4>Frame Configuration</h4>
-<ul>
-  <li><strong>Image Path / Output Folder</strong> — Directory for saving captured frames.</li>
-  <li><strong>Frame Width</strong> — Sensor width in pixels.</li>
-  <li><strong>Frame Height</strong> — Sensor height in pixels.</li>
-  <li><strong>Frame Rate (FPS)</strong> — Live stream frame rate.</li>
-  <li><strong>Exposure Time</strong> — Sensor exposure duration (microseconds).</li>
-  <li><strong>Gain</strong> — Sensor amplification level.</li>
-  <li><strong>Test Pattern</strong> — Internal test pattern selection (0=disabled).</li>
-</ul>
-
-<h4>Stream Control &amp; Capture</h4>
-<ul>
-  <li><strong>Start Stream</strong> — Begin capturing frames from camera.</li>
-  <li><strong>Stop Stream</strong> — Halt live capture.</li>
-  <li><strong>Frame Buffer</strong> — Configurable buffer size for smooth playback (default: 100 frames).</li>
-  <li><strong>Save Mode</strong> — Choose output format: RAW binary, BMP, or PNG.</li>
-  <li><strong>Capture</strong> — Save current frame or start batch capture.</li>
-</ul>
-
-<h4>Region Modes &amp; Display</h4>
-<ul>
-  <li><strong>Region Modes (▶)</strong> — Toggle to expand region configuration panel.</li>
-  <li><strong>Region Selection</strong> — Define sub-regions of the sensor for focused capture.</li>
-  <li><strong>Region Offsets</strong> — Apply XY shifts to selected region.</li>
-  <li><strong>Multiple Regions</strong> — Configure and switch between preset regions.</li>
-  <li><strong>Fit to Screen</strong> — Automatically scale live stream to fit display.</li>
-  <li><strong>Pixel Stretching</strong> — Apply aspect ratio correction for rectangular pixels.</li>
-</ul>
-
-<h4>Session Management</h4>
-<ul>
-  <li><strong>Save Settings</strong> — Persist camera and capture configurations.</li>
-  <li><strong>Load Settings</strong> — Restore previous session parameters.</li>
-</ul>
-
-<h4>Keyboard Shortcuts</h4>
-<ul>
-  <li><strong>Space</strong> — Start / Stop stream.</li>
-  <li><strong>Ctrl + S</strong> — Save settings.</li>
-  <li><strong>Shift + Q</strong> — Close tab.</li>
 </ul>
 """,
     "tiled": """

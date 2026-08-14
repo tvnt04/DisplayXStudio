@@ -2069,47 +2069,7 @@ class BandStitchProApp(BandViewsMixin, QWidget):
         self.load_folder_data()
 
     def _notify_iris_folder_loaded(self, folder: str):
-        """Tell Iris which acquisition folder is now loaded so it can read the right .log file."""
-        try:
-            main_app = getattr(self, 'main_app', None)
-            if main_app is None:
-                return
-            iris = getattr(main_app, 'iris', None)
-            if iris is None:
-                return
-            iris._last_loaded_folder = folder
-            tab_widget = getattr(main_app, 'tab_widget', None)
-            tab_index = tab_widget.indexOf(self) if tab_widget is not None else -1
-            if tab_index >= 0:
-                try:
-                    iris.notify_tab_activated(tab_index, self, "band")
-                except Exception:
-                    pass
-                try:
-                    frame_count = 0
-                    band_count = 0
-                    if getattr(self, "band_frames", None):
-                        try:
-                            first_key = sorted(self.band_frames.keys())[0]
-                            frame_count = len(self.band_frames.get(first_key) or [])
-                        except Exception:
-                            frame_count = 0
-                        band_count = len(getattr(self, "bands_info", {}) or {}) or len(self.band_frames)
-                    iris.notify_dataset_loaded(
-                        tab_index,
-                        folder,
-                        frame_count,
-                        band_count,
-                        getattr(self, "bands_info", {}) or {},
-                        self,
-                    )
-                except Exception:
-                    pass
-            # Also trigger the full analysis in background
-            if hasattr(iris, 'analyze_folder_on_load'):
-                iris.analyze_folder_on_load(folder)
-        except Exception as e:
-            print(f"[Iris] Folder notify error: {e}")
+        pass
     def _show_recent_menu(self):
         try:
             menu = QMenu(self)
@@ -3844,15 +3804,7 @@ class BandStitchProApp(BandViewsMixin, QWidget):
         self.frame_label.setText(f"{self.current_frame_index+1}/{self.frame_slider.maximum()+1}")
         if self.fit_mode_var.checkedId() == 0 and not getattr(self, 'playback_mode', False):
             self.fit_to_screen()
-        try:
-            main_app = getattr(self, 'main_app', None)
-            iris = getattr(main_app, 'iris', None) if main_app is not None else None
-            tab_widget = getattr(main_app, 'tab_widget', None) if main_app is not None else None
-            tab_index = tab_widget.indexOf(self) if tab_widget is not None else -1
-            if iris is not None and tab_index >= 0:
-                iris.notify_frame_changed(tab_index, value)
-        except Exception:
-            pass
+
    
     def change_frame(self, delta):
         new_index = self.current_frame_index + delta

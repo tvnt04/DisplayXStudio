@@ -729,6 +729,7 @@ class MagnifierGraphicsView(QGraphicsView):
             return
         mouse_scene = self.mapToScene(event.pos())
         image_x, image_y = self.parent().get_original_coords(mouse_scene)
+        inside_image = getattr(self.parent(), '_last_point_within_image', False)
         
         # Update mouse click line position
         if self.mouse_click_line_enabled:
@@ -774,7 +775,14 @@ class MagnifierGraphicsView(QGraphicsView):
             return
         self.parent().update_position_label(event.pos())
         if not (self.measure_enabled or self.calculate_enabled):
-            self.parent()._emit_pixel_info_at(math.floor(image_x), math.floor(image_y))
+            if inside_image:
+                self.parent()._emit_pixel_info_at(math.floor(image_x), math.floor(image_y))
+            else:
+                # Clear any stale overlay when outside image bounds
+                try:
+                    self.parent()._clear_pixel_info_overlay()
+                except Exception:
+                    pass
         magnifier_cursor = Qt.ArrowCursor
         grid_cursor = Qt.ArrowCursor
         if self.grid_enabled and not (self.measure_enabled or self.calculate_enabled):
@@ -2066,39 +2074,97 @@ class GraphicsImageViewer(QWidget):
                 print(f"Error repositioning pixel info box: {e}")
 
     def get_original_coords(self, scene_point):
-        items = self.scene.items(scene_point)
-        if items:
-            item = items[0] # topmost
-            if isinstance(item, QGraphicsPixmapItem):
-                local_point = item.mapFromScene(scene_point)
-                return local_point.x(), local_point.y() + getattr(item, 'orig_y', 0)
-        # Outside item bounds: still map through the image transform so we can
-        # report signed out-of-bounds coordinates instead of forcing (0, 0).
-        if self.frame_items:
-            best = None
-            best_dist = None
-            for item in self.frame_items:
+        # Robust mapping: use each pixmap item's sceneTransform inverse so
+        # rotation/scale/group transforms are correctly handled.
+        try:
+            # Prefer the topmost pixmap item under the point
+            items = self.scene.items(scene_point)
+            for itm in items:
+                if isinstance(itm, QGraphicsPixmapItem):
+                    try:
+                        inv, inv_ok = itm.sceneTransform().inverted()
+                        if inv_ok:
+                            local = inv.map(scene_point)
+                        else:
+                            local = itm.mapFromScene(scene_point)
+                        lx, ly = local.x(), local.y()
+                        w = float(itm.pixmap().width()) if itm.pixmap() is not None else 0.0
+                        h = float(getattr(itm, 'local_height', itm.pixmap().height())) if itm.pixmap() is not None else 0.0
+                        inside = (0.0 <= lx <= max(0.0, w - 1.0)) and (0.0 <= ly <= max(0.0, h - 1.0))
+                        self._last_point_within_image = bool(inside)
+                        return lx, ly + getattr(itm, 'orig_y', 0)
+                    except Exception:
+                        continue
+
+            # If we have split frame items, find the nearest item and return its mapped coords
+            if self.frame_items:
+                best = None
+                best_dist = None
+                for item in self.frame_items:
+                    try:
+                        inv, inv_ok = item.sceneTransform().inverted()
+                        if inv_ok:
+                            local = inv.map(scene_point)
+                        else:
+                            local = item.mapFromScene(scene_point)
+                        lx, ly = local.x(), local.y()
+                        w = float(item.pixmap().width())
+                        h = float(getattr(item, 'local_height', item.pixmap().height()))
+                        max_x = max(0.0, w - 1.0)
+                        max_y = max(0.0, h - 1.0)
+                        dx = 0.0 if (0.0 <= lx <= max_x) else min(abs(lx - 0.0), abs(lx - max_x))
+                        dy = 0.0 if (0.0 <= ly <= max_y) else min(abs(ly - 0.0), abs(ly - max_y))
+                        dist = dx * dx + dy * dy
+                        if best_dist is None or dist < best_dist:
+                            best_dist = dist
+                            best = (lx, ly + getattr(item, 'orig_y', 0.0))
+                    except Exception:
+                        continue
+                if best is not None:
+                    # best contains (lx, ly+orig_y)
+                    lx, ly = best[0], best[1]
+                    # For frame items, approximate inside check
+                    # (we consider inside if within typical frame bounds)
+                    # Note: best already prioritized nearest
+                    self._last_point_within_image = True
+                    return best
+
+            # Fallback to the single pixmap_item if present
+            if self.pixmap_item is not None:
                 try:
-                    local = item.mapFromScene(scene_point)
+                    inv, inv_ok = self.pixmap_item.sceneTransform().inverted()
+                    if inv_ok:
+                        local = inv.map(scene_point)
+                    else:
+                        local = self.pixmap_item.mapFromScene(scene_point)
                     lx, ly = local.x(), local.y()
-                    w = float(item.pixmap().width())
-                    h = float(getattr(item, 'local_height', item.pixmap().height()))
-                    max_x = max(0.0, w - 1.0)
-                    max_y = max(0.0, h - 1.0)
-                    dx = 0.0 if (0.0 <= lx <= max_x) else min(abs(lx - 0.0), abs(lx - max_x))
-                    dy = 0.0 if (0.0 <= ly <= max_y) else min(abs(ly - 0.0), abs(ly - max_y))
-                    dist = dx * dx + dy * dy
-                    if best_dist is None or dist < best_dist:
-                        best_dist = dist
-                        best = (lx, ly + getattr(item, 'orig_y', 0.0))
+                    w = float(self.pixmap_item.pixmap().width()) if self.pixmap_item.pixmap() is not None else 0.0
+                    h = float(getattr(self.pixmap_item, 'local_height', self.pixmap_item.pixmap().height())) if self.pixmap_item.pixmap() is not None else 0.0
+                    inside = (0.0 <= lx <= max(0.0, w - 1.0)) and (0.0 <= ly <= max(0.0, h - 1.0))
+                    self._last_point_within_image = bool(inside)
+                    return lx, ly
                 except Exception:
-                    continue
-            if best is not None:
-                return best
-        if self.pixmap_item is not None:
-            local_point = self.pixmap_item.mapFromScene(scene_point)
-            return local_point.x(), local_point.y()
+                    pass
+        except Exception:
+            pass
         return 0.0, 0.0
+
+    def _clear_pixel_info_overlay(self):
+        try:
+            if hasattr(self, 'pixel_info_box_overlay') and self.pixel_info_box_overlay is not None:
+                try:
+                    # Reset overlay state and rebuild text (will hide values)
+                    self.pixel_info_box_overlay.last_values = np.array([])
+                    self.pixel_info_box_overlay.last_x = None
+                    self.pixel_info_box_overlay.last_y = None
+                    self.pixel_info_box_overlay.build_info_text()
+                except Exception:
+                    try:
+                        self.pixel_info_box_overlay.hide()
+                    except Exception:
+                        pass
+        except Exception:
+            pass
 
     def _normalize_pixel_query(self, x, y):
         """Return display coords and border-clamped sampling coords."""
@@ -3432,6 +3498,25 @@ class GraphicsImageViewer(QWidget):
     def _emit_pixel_info_at(self, x, y):
         # Prefer caller-provided raw data for pixel info when available
         data_src = self.original_raw_data if getattr(self, 'original_raw_data', None) is not None else self.original_image_data
+        # If coordinates are clearly out-of-bounds, clear overlay and return
+        try:
+            w = int(getattr(self, 'full_width', 0) or 0)
+            h = int(getattr(self, 'full_height', 0) or 0)
+            if w <= 0 or h <= 0:
+                # nothing to show
+                try:
+                    self._clear_pixel_info_overlay()
+                except Exception:
+                    pass
+                return
+            if x is None or y is None or int(x) < 0 or int(x) >= w or int(y) < 0 or int(y) >= h:
+                try:
+                    self._clear_pixel_info_overlay()
+                except Exception:
+                    pass
+                return
+        except Exception:
+            pass
         if data_src is not None:
             display_x, display_y, sample_x, sample_y = self._normalize_pixel_query(x, y)
             try:

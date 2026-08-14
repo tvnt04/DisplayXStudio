@@ -1728,10 +1728,7 @@ class MainApp(QMainWindow):
         
         self._insert_real_tab(tiled_widget, "Tiled Mode", target_tab_widget)
 
-    def _add_live_tab(self, target_tab_widget=None):
-        """Create a new Live Display tab."""
-        self.add_live_tab(target_tab_widget=target_tab_widget)  # Reuse existing logic
-    
+
     def update_tab_name(self, app, name):
         self.update_tab_name_for_widget(app, name)
 
