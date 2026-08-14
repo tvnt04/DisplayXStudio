@@ -16,10 +16,18 @@ import psutil
 import math
 from PIL import Image
 import traceback
-import math
 
 import concurrent.futures  
 import re
+
+try:
+    from iris2.event_bus import bus, AppEvent, EventType
+    _HAS_IRIS_BUS = True
+except Exception:
+    bus = None
+    AppEvent = None
+    EventType = None
+    _HAS_IRIS_BUS = False
 
 class HistogramWorker(QThread):
     finished = pyqtSignal(dict)  
@@ -196,6 +204,8 @@ class RangeHistogramThread(QThread):
 
             processed = 0
             total = n_frames
+            import time
+            last_emit_time = time.time()
 
             for fi in range(self.start_frame, self.end_frame + 1):
                 if self._abort.is_set():
@@ -230,10 +240,14 @@ class RangeHistogramThread(QThread):
                         print(f"RangeHistogramThread: skipping frame {fi} for {k}: {ex}")
 
                 processed += 1
-                # Emit progressive update after each frame (caller will redraw)
-                self.bins_ready.emit({k: accum[k].copy() for k in keys}, processed, total)
-                pct = int((processed / float(total)) * 100)
-                self.progress.emit(pct)
+                current_time = time.time()
+                
+                # Throttle progressive updates to at most 10 FPS to prevent UI flooding and OOM
+                if processed == total or (current_time - last_emit_time >= 0.1):
+                    self.bins_ready.emit({k: accum[k].copy() for k in keys}, processed, total)
+                    pct = int((processed / float(total)) * 100)
+                    self.progress.emit(pct)
+                    last_emit_time = current_time
 
                 # Allow other threads to set abort
                 if self._abort.is_set():
@@ -263,6 +277,10 @@ class HistogramViewer(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+
+        # Iris context (optional): set by caller when histogram is updated
+        self._iris_folder = ""
+        self._iris_frame_index = 0
 
         main_layout = QVBoxLayout()
         main_layout.setContentsMargins(2, 2, 2, 2)
@@ -430,6 +448,7 @@ class HistogramViewer(QWidget):
         self._focused_band = None
         self._selected_bands = set()
         self._curves = {}
+        self._fills = {}
         self._curve_colors = {}
         self._row_to_band = {}
         self._band_to_row = {}
@@ -594,6 +613,7 @@ class HistogramViewer(QWidget):
     def _reset_plot_data(self):
         self.plot_item.clear()
         self._curves.clear()
+        self._fills.clear()
         self._curve_colors.clear()
         self._row_to_band.clear()
         self._band_to_row.clear()
@@ -1111,21 +1131,71 @@ class HistogramViewer(QWidget):
             color = self._curve_colors[key]
             if has_multi:
                 is_selected = key in selected
-                curve.setVisible(is_selected)
-                curve.setPen(self._make_pen(color, width=3 if is_selected else 1, alpha=255 if is_selected else 28))
-                curve.setZValue(3 if is_selected else 1)
+                # keep all curves visible but make non-selected almost invisible
+                curve.setVisible(True)
+                if is_selected:
+                    curve.setPen(self._make_pen(color, width=3, alpha=255))
+                    curve.setZValue(3)
+                else:
+                    curve.setPen(self._make_pen(color, width=1, alpha=18))
+                    curve.setZValue(0)
+                # update corresponding fill (adjust brush alpha)
+                fill_tuple = self._fills.get(key)
+                if fill_tuple is not None:
+                    fill_item, baseline = fill_tuple
+                    try:
+                        fill_item.setVisible(True)
+                        if is_selected:
+                            brush = pg.mkBrush(color.red(), color.green(), color.blue(), 110)
+                            fill_item.setZValue(2)
+                        else:
+                            brush = pg.mkBrush(color.red(), color.green(), color.blue(), 12)
+                            fill_item.setZValue(0)
+                        fill_item.setBrush(brush)
+                    except Exception:
+                        pass
             elif self._focused_band is None:
                 curve.setVisible(True)
                 curve.setPen(self._make_pen(color, width=2, alpha=255))
                 curve.setZValue(2)
+                fill_tuple = self._fills.get(key)
+                if fill_tuple is not None:
+                    fill_item, baseline = fill_tuple
+                    try:
+                        fill_item.setVisible(True)
+                        brush = pg.mkBrush(color.red(), color.green(), color.blue(), 80)
+                        fill_item.setBrush(brush)
+                        fill_item.setZValue(1)
+                    except Exception:
+                        pass
             elif key == self._focused_band:
                 curve.setVisible(True)
                 curve.setPen(self._make_pen(color, width=4, alpha=255))
                 curve.setZValue(3)
+                fill_tuple = self._fills.get(key)
+                if fill_tuple is not None:
+                    fill_item, baseline = fill_tuple
+                    try:
+                        fill_item.setVisible(True)
+                        brush = pg.mkBrush(color.red(), color.green(), color.blue(), 110)
+                        fill_item.setBrush(brush)
+                        fill_item.setZValue(2)
+                    except Exception:
+                        pass
             else:
                 curve.setVisible(True)
                 curve.setPen(self._make_pen(color, width=1, alpha=28))
                 curve.setZValue(1)
+                fill_tuple = self._fills.get(key)
+                if fill_tuple is not None:
+                    fill_item, baseline = fill_tuple
+                    try:
+                        brush = pg.mkBrush(color.red(), color.green(), color.blue(), 20)
+                        fill_item.setBrush(brush)
+                        fill_item.setVisible(True)
+                        fill_item.setZValue(0)
+                    except Exception:
+                        pass
 
         self.stats_table.blockSignals(True)
         self.stats_table.clearSelection()
@@ -1224,15 +1294,39 @@ class HistogramViewer(QWidget):
                 continue
 
             color = QColor(*self._palette[row % len(self._palette)])
-            curve = pg.PlotCurveItem(pen=self._make_pen(color, width=1, alpha=255), antialias=False)
-            curve.setData(x=x, y=y)
+            if x.size > 1:
+                dx = float(np.median(np.diff(x)))
+                if dx <= 0:
+                    dx = 1.0
+            else:
+                dx = 1.0
+            x_edges = np.empty(x.size + 1, dtype=np.float64)
+            x_edges[:-1] = x - (dx * 0.5)
+            x_edges[-1] = x[-1] + (dx * 0.5)
+
+            curve = pg.PlotCurveItem(pen=self._make_pen(color, width=2, alpha=255), antialias=False)
+            curve.setData(x=x_edges, y=y, stepMode=True)
             try:
                 curve.setClickable(True, width=9)
                 curve.sigClicked.connect(lambda *_, b=band: self._on_curve_clicked(b))
             except Exception:
                 pass
-
             self.plot_item.addItem(curve)
+            # create an invisible baseline and a translucent fill between curve and baseline
+            try:
+                baseline = pg.PlotCurveItem(pen=pg.mkPen((0, 0, 0, 0)), antialias=False)
+                baseline.setData(x=x_edges, y=np.zeros_like(y), stepMode=True)
+                baseline.setVisible(False)
+                self.plot_item.addItem(baseline)
+                brush = pg.mkBrush(color.red(), color.green(), color.blue(), 80)
+                fill_item = pg.FillBetweenItem(curve, baseline, brush=brush)
+                # Put fill below curves
+                fill_item.setZValue(0)
+                self.plot_item.addItem(fill_item)
+                self._fills[band] = (fill_item, baseline)
+            except Exception:
+                self._fills[band] = None
+
             self._curves[band] = curve
             self._curve_colors[band] = color
             self._row_to_band[row] = band
@@ -1373,7 +1467,84 @@ class HistogramViewer(QWidget):
             else:
                 self.focus_band(band)
 
-    def update_histogram(self, band_frames, current_frame_index, frame_mode, start_frame=None, end_frame=None, smooth=True, ignore_extremes=True):
+    def _band_key_to_index(self, band):
+        if isinstance(band, int):
+            return band
+        if isinstance(band, str):
+            m = re.search(r"(\d+)$", band)
+            if m:
+                try:
+                    return int(m.group(1))
+                except Exception:
+                    pass
+        return band
+
+    def _sorted_band_refs(self, bands):
+        refs = [self._band_key_to_index(b) for b in bands]
+        return sorted(refs, key=lambda v: (0, int(v)) if isinstance(v, int) else (1, str(v)))
+
+    def _build_band_stats(self, payload):
+        stats = {}
+        for entry in payload:
+            band = entry.get("band")
+            band_idx = self._band_key_to_index(band)
+            y = np.asarray(entry.get("y", []))
+            total = float(y.sum()) if y.size else 0.0
+            black_pct = (float(y[0]) / total * 100.0) if total > 0 else 0.0
+            sat_pct = (float(y[-1]) / total * 100.0) if total > 0 else 0.0
+            bmin, bmax = self._band_minmax.get(band, (None, None))
+            stats[band_idx] = {
+                "mean": entry.get("mean"),
+                "std":  entry.get("std"),
+                "min":  bmin,
+                "max":  bmax,
+                "saturated_pct": sat_pct,
+                "black_pct": black_pct,
+            }
+        return stats
+
+    def _emit_histogram_state(self, payload):
+        if not _HAS_IRIS_BUS:
+            return
+        if not payload:
+            return
+
+        display_mode = "frame_range" if str(self.frame_mode).lower().startswith("range") else "single_frame"
+        visible = None
+        selected = set(getattr(self, "_selected_bands", set()))
+        if selected:
+            visible = self._sorted_band_refs(selected)
+        else:
+            visible = self._sorted_band_refs(self._curves.keys())
+
+        overall_min, overall_max = getattr(self, "_overall_minmax", (None, None))
+        frame_min = overall_min if overall_min is not None else self.min_val
+        frame_max = overall_max if overall_max is not None else self.max_val
+
+        payload_stats = self._build_band_stats(payload)
+
+        try:
+            bus.emit(AppEvent(
+                EventType.HISTOGRAM_UPDATED,
+                {
+                    "folder":        self._iris_folder,
+                    "frame_index":   int(self._iris_frame_index),
+                    "display_mode":  display_mode,
+                    "range_start":   int(self.start_frame),
+                    "range_end":     int(self.end_frame),
+                    "axis_min":      float(self.min_val),
+                    "axis_max":      float(self.max_val),
+                    "frame_min":     float(frame_min) if frame_min is not None else 0.0,
+                    "frame_max":     float(frame_max) if frame_max is not None else 0.0,
+                    "visible_bands": visible,
+                    "band_stats":    payload_stats,
+                },
+                source="histogram_viewer"
+            ))
+        except Exception:
+            pass
+
+    def update_histogram(self, band_frames, current_frame_index, frame_mode, start_frame=None, end_frame=None, smooth=True, ignore_extremes=True, folder: str = ""):
         self._reset_plot_data()
         if not band_frames:
             self.stats_table.setRowCount(0)
@@ -1386,6 +1557,20 @@ class HistogramViewer(QWidget):
         self.frame_mode = frame_mode
         self.start_frame = start_frame if start_frame is not None else current_frame_index
         self.end_frame = end_frame if end_frame is not None else current_frame_index
+        self._iris_frame_index = int(current_frame_index)
+        
+        # Detect actual bitdepth to force consistent x-axis scale
+        detected_bd = 8
+        for obj in band_frames.values():
+            if hasattr(obj, 'get_raw') and hasattr(obj, 'bitdepth'):
+                detected_bd = int(getattr(obj, 'bitdepth', 8))
+                break
+            elif isinstance(obj, (list, tuple)) and len(obj) > 0 and isinstance(obj[0], np.ndarray):
+                detected_bd = 8 if obj[0].dtype == np.uint8 else 16
+                break
+        self._current_bitdepth = detected_bd
+        if folder:
+            self._iris_folder = str(folder)
 
         if getattr(self, 'worker', None):
             try:
@@ -1466,11 +1651,25 @@ class HistogramViewer(QWidget):
                     range_max = bmax if range_max is None else max(range_max, bmax)
                 x = np.arange(len(b), dtype=np.float64)
                 mean, var, sd, cnt = self._stats_from_hist(b, x)
-                y_max = max(y_max, float(np.max(b)))
+                
+                # Downsample for fast plotting (keep full domain so axis scales correctly)
+                max_bins = 1024
+                if len(b) > max_bins:
+                    factor = int(np.ceil(len(b) / max_bins))
+                    pad_len = factor * max_bins - len(b)
+                    b_pad = np.pad(b, (0, pad_len), mode='constant')
+                    x_pad = np.pad(x, (0, pad_len), mode='edge')
+                    b_plot = b_pad.reshape(max_bins, factor).max(axis=1)
+                    x_plot = x_pad.reshape(max_bins, factor).mean(axis=1)
+                else:
+                    b_plot = b
+                    x_plot = x
+
+                y_max = max(y_max, float(np.max(b_plot)))
                 payload.append({
                     "band": key,
-                    "x": x,
-                    "y": b,
+                    "x": x_plot,
+                    "y": b_plot,
                     "mean": mean if cnt > 0 else None,
                     "var": var if cnt > 0 else None,
                     "std": sd if cnt > 0 else None
@@ -1491,6 +1690,7 @@ class HistogramViewer(QWidget):
             self.hist_progress.setValue(pct)
             if processed >= total:
                 self.hist_progress.hide()
+            self._emit_histogram_state(payload)
         except Exception as e:
             print(f"update_from_bins error: {e}")
 
@@ -1500,7 +1700,12 @@ class HistogramViewer(QWidget):
         self.max_val = data['max_val']
         frame_mode_str = 'Single Frame' if self.frame_mode == 'Single' else f'Frames {self.start_frame+1}-{self.end_frame+1}'
 
-        num_bins = min(max(256, self.max_val + 1), 65536)
+        bitdepth = getattr(self, '_current_bitdepth', 8)
+        if bitdepth <= 8:
+            num_bins = 256
+        else:
+            num_bins = min(1 << int(bitdepth), 65536)
+
         bins = np.arange(0, num_bins + 1, dtype=np.int32)
         bin_centers = (bins[:-1] + bins[1:]) / 2.0
         payload = []
@@ -1523,10 +1728,25 @@ class HistogramViewer(QWidget):
             mean = sum_val / count
             var = max(0.0, (sum_sq / count) - mean ** 2)
             sd = math.sqrt(max(0.0, var))
+
+            x_full = bin_centers[:len(hist)]
+
+            max_bins = 1024
+            if len(hist) > max_bins:
+                factor = int(np.ceil(len(hist) / max_bins))
+                pad_len = factor * max_bins - len(hist)
+                hist_pad = np.pad(hist, (0, pad_len), mode='constant')
+                x_pad = np.pad(x_full, (0, pad_len), mode='edge')
+                hist_plot = hist_pad.reshape(max_bins, factor).max(axis=1)
+                x_plot = x_pad.reshape(max_bins, factor).mean(axis=1)
+            else:
+                hist_plot = hist
+                x_plot = x_full
+
             payload.append({
                 "band": key,
-                "x": bin_centers[:len(hist)],
-                "y": hist,
+                "x": x_plot,
+                "y": hist_plot,
                 "mean": mean,
                 "var": var,
                 "std": sd
@@ -1536,6 +1756,7 @@ class HistogramViewer(QWidget):
         self._set_frame_set_minmax(self.min_val, self.max_val)
         self.minmax_updated.emit(self.min_val, self.max_val)
         self.hist_progress.hide()
+        self._emit_histogram_state(payload)
         gc.collect()
 
     def _on_range_finished(self, data):
@@ -1549,6 +1770,7 @@ class HistogramViewer(QWidget):
             self.update_from_bins({k: v for k, v in bins_map.items()}, processed=total, total=total)
             self._set_frame_set_minmax(self.min_val, self.max_val)
             self.minmax_updated.emit(self.min_val, self.max_val)
+            # update_from_bins already emits histogram state
         except Exception as e:
             print(f"_on_range_finished error: {e}")
         finally:
@@ -1848,7 +2070,7 @@ class PixelInfoBox(QWidget):
         try:
             if self.last_dn_value:
                 if isinstance(self.last_dn_value, tuple) and len(self.last_dn_value) >= 3:
-                    lat, lon, band_idx = self.last_dn_value[0], self.last_dn_value[1], self.last_dn_value[2]
+                    lat, lon, _ = self.last_dn_value[0], self.last_dn_value[1], self.last_dn_value[2]
                     self.info_text.append("\nGeolocation:")
                     self.info_text.append(f"  Lat: {lat:.8f}")
                     self.info_text.append(f"  Lon: {lon:.8f}")

@@ -2048,19 +2048,19 @@ class GraphicsImageViewer(QWidget):
         self._reposition_fs_btn()
         if self.rotation_mode != 0:
             self._reposition_overlay()
-        # Reposition pixel info box overlay to stay at bottom-left inside graphics view viewport
+        self._position_pixel_info_overlay()
+
+    def _position_pixel_info_overlay(self):
+        # Keep the raw-mode pixel info overlay anchored inside the viewport after it resizes.
         if hasattr(self, 'pixel_info_box_overlay') and self.pixel_info_box_overlay is not None:
             try:
                 margin = 10
                 gv = self.graphics_view
                 viewport = gv.viewport()
                 viewport_rect = viewport.rect()
-               
-                # Position inside the graphics_view viewport, accounting for scrollbars
-                # Map viewport bottom-left to parent coordinates
                 px_x = viewport.mapToParent(viewport_rect.bottomLeft()).x() + margin
                 py_y = viewport.mapToParent(viewport_rect.bottomLeft()).y() - self.pixel_info_box_overlay.height() - margin
-               
+                py_y = max(margin, py_y)
                 self.pixel_info_box_overlay.move(int(px_x), int(py_y))
             except Exception as e:
                 print(f"Error repositioning pixel info box: {e}")

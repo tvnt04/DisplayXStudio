@@ -152,9 +152,9 @@ class LoadWorker(QThread):
                 self.progress.emit(int((21 + int((i + 1) / max(1, len(json_files)) * 4)) * 0.8)) # 17-20
                 with open(os.path.join(self.folder, f), "r") as jf:
                     try:
-                        config = json.load(jf)
+                        _ = json.load(jf)
                     except Exception:
-                        config = {}
+                        pass
                     base_name = os.path.splitext(f)[0]
                 if base_name:
                     break
@@ -241,7 +241,7 @@ class LoadWorker(QThread):
                     band_files[band_id]['raw'] = fpath
             
             if not band_files:
-                raise ValueError(f"No valid band files found in folder.")
+                raise ValueError("No valid band files found in folder.")
             
             # Load bands with priority: raw > binned > split
             sorted_ids = sorted(band_files.keys(), key=lambda x: (len(x), x))
@@ -1069,13 +1069,6 @@ class BandStitchProApp(BandViewsMixin, QWidget):
         self.contrast_min_var.setValue(0)
         self.contrast_max_var.setValue(self._current_max_dn())
         print("State cleared successfully.")
-    def _get_viewer_for_key(self, key):
-        # Helper: Find GraphicsImageViewer for a band key (search notebook)
-        for i in range(self.individual_bands_notebook.count()):
-            widget = self.individual_bands_notebook.widget(i)
-            if hasattr(widget, 'key') and widget.key == key:
-                return widget.findChild(GraphicsImageViewer)
-        return None
     def _flip_viewer_image(self, key, vertical, horizontal=False):
         # Apply flip to specific viewer's image (call apply_flip on it)
         viewer = self._get_viewer_for_key(key)
@@ -2486,7 +2479,7 @@ class BandStitchProApp(BandViewsMixin, QWidget):
         key = getattr(sub_widget, 'key', None)
         print(f"[DEBUG] unload_individual_subtab called for key: {key}")
         if not key:
-            print(f"[DEBUG] No key found, skipping unload")
+            print("[DEBUG] No key found, skipping unload")
             return
         if hasattr(sub_widget, 'worker'):
             self._stop_thread(sub_widget.worker, 3000)
@@ -2527,7 +2520,7 @@ class BandStitchProApp(BandViewsMixin, QWidget):
         print(f"[DEBUG] _unload_data_only called for key: {key}")
         notebook = getattr(self, 'individual_bands_notebook', None)
         if not key or not self._qt_alive(notebook):
-            print(f"[DEBUG] No key provided, skipping unload")
+            print("[DEBUG] No key provided, skipping unload")
             return
         # Find the widget by key
         widget = None
@@ -2644,31 +2637,47 @@ class BandStitchProApp(BandViewsMixin, QWidget):
                 return getattr(self, 'all_bands_viewer', None)
             if key in ('rgb_fusion', 'rgb'):
                 return getattr(self, 'rgb_preview_viewer', None)
+            
+            notebook = getattr(self, 'individual_bands_notebook', None)
+            if not notebook:
+                return None
+                
             if key == 'individual_bands':
                 # Return the currently visible per-band viewer (if any)
-                notebook = getattr(self, 'individual_bands_notebook', None)
-                if notebook:
-                    widget = notebook.currentWidget()
-                    if widget:
-                        # find the first GraphicsImageViewer child in that tab
+                widget = notebook.currentWidget()
+                if widget:
+                    # find the first GraphicsImageViewer child in that tab
+                    try:
+                        viewer = widget.findChild(type(self.all_bands_viewer)) if getattr(self, 'all_bands_viewer', None) else None
+                    except Exception:
+                        viewer = None
+                    # fallback: generic findChild for GraphicsImageViewer by name/class
+                    if viewer is None:
                         try:
-                            viewer = widget.findChild(type(self.all_bands_viewer)) if getattr(self, 'all_bands_viewer', None) else None
+                            # find by class name (defensive)
+                            for child in widget.findChildren(QWidget):
+                                if getattr(child, '__class__', None) and child.__class__.__name__ == 'GraphicsImageViewer':
+                                    return child
                         except Exception:
-                            viewer = None
-                        # fallback: generic findChild for GraphicsImageViewer by name/class
-                        if viewer is None:
-                            try:
-                                # find by class name (defensive)
-                                for child in widget.findChildren(QWidget):
-                                    if getattr(child, '__class__', None) and child.__class__.__name__ == 'GraphicsImageViewer':
-                                        return child
-                            except Exception:
-                                pass
-                        return viewer
+                            pass
+                    return viewer
                 return None
+                
+            # Fallback for specific band keys (e.g., 'b0', 'b1')
+            for i in range(notebook.count()):
+                widget = notebook.widget(i)
+                if hasattr(widget, 'key') and widget.key == key:
+                    # Try generic search for GraphicsImageViewer
+                    try:
+                        # find by class name (defensive)
+                        for child in widget.findChildren(QWidget):
+                            if getattr(child, '__class__', None) and child.__class__.__name__ == 'GraphicsImageViewer':
+                                return child
+                    except Exception:
+                        pass
+            return None
         except Exception:
             return None
-        return None
     def _apply_cached_image(self, key, pil_image, raw_data):
         try:
             viewer = self._get_viewer_for_key(key)

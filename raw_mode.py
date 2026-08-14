@@ -8,7 +8,7 @@ import traceback
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QTabWidget, QLabel, QProgressBar,
     QFileDialog, QMessageBox, QLineEdit, QFormLayout, QDialog, QSpinBox, QDoubleSpinBox, QCheckBox, QComboBox,
-    QToolButton, QMenu, QApplication, QShortcut, QGroupBox
+    QToolButton, QMenu, QApplication, QShortcut, QGroupBox, QTextEdit
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
 from PyQt5.QtGui import QKeySequence
@@ -498,8 +498,7 @@ class RawViewer(QWidget):
         # Pixel info overlay
         try:
             self.main_display.pixel_info_box_overlay = PixelInfoBox(self.main_display, matrix_size_var=self.matrix_size_var)
-            self.main_display.pixel_info_box_overlay.setFixedWidth(280)
-            self.main_display.pixel_info_box_overlay.setFixedHeight(200)
+            self._configure_raw_pixel_info_overlay(self.main_display.pixel_info_box_overlay)
             self.main_display.pixel_info_box_overlay.setStyleSheet(
                 "QWidget { background-color: rgba(0, 0, 0, 0.85); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 4px; color: white; }"
                 "QTextEdit { background-color: rgba(0, 0, 0, 0.8); border: none; color: white; }"
@@ -511,8 +510,7 @@ class RawViewer(QWidget):
                         title_item.widget().hide()
             except Exception:
                 pass
-            self.main_display.pixel_info_box_overlay.show()
-            self.main_display.pixel_info_box_overlay.raise_()
+            self.main_display.pixel_info_box_overlay.hide()
         except Exception as e:
             print(f"Warning: Could not create pixel info box overlay: {e}")
             self.main_display.pixel_info_box_overlay = None
@@ -522,6 +520,84 @@ class RawViewer(QWidget):
         QShortcut(QKeySequence("Left"), self, self.prev_frame)
         QShortcut(QKeySequence("Ctrl+S"), self, self.save_state)
         QShortcut(QKeySequence("Ctrl+Space"), self, self.export_current)
+
+    def _configure_raw_pixel_info_overlay(self, overlay):
+        try:
+            overlay.setMinimumSize(0, 0)
+            overlay.setMaximumSize(16777215, 16777215)
+            overlay.info_text.setLineWrapMode(QTextEdit.NoWrap)
+            overlay.info_text.setMinimumSize(0, 0)
+            overlay.info_text.setMaximumSize(16777215, 16777215)
+        except Exception:
+            pass
+
+        for method_name in ("update_info", "update_measurements", "update_calculations", "force_show_measurements"):
+            original = getattr(overlay, method_name, None)
+            if original is None:
+                continue
+
+            def wrapped(*args, _original=original, **kwargs):
+                result = _original(*args, **kwargs)
+                try:
+                    has_text = not overlay.info_text.document().isEmpty()
+                except Exception:
+                    has_text = True
+                if has_text:
+                    overlay.show()
+                    overlay.raise_()
+                    self._resize_raw_pixel_info_overlay(overlay)
+                else:
+                    overlay.hide()
+                return result
+
+            try:
+                setattr(overlay, method_name, wrapped)
+            except Exception:
+                pass
+
+    def _resize_raw_pixel_info_overlay(self, overlay):
+        try:
+            if overlay is None or not overlay.isVisible():
+                return
+
+            margin = 10
+            viewport = self.main_display.graphics_view.viewport()
+            max_w = max(180, viewport.width() - (margin * 2))
+            max_h = max(120, viewport.height() - (margin * 2))
+
+            doc = overlay.info_text.document()
+            doc.adjustSize()
+            text_w = int(math.ceil(doc.idealWidth())) + 22
+            text_h = int(math.ceil(doc.size().height())) + 18
+
+            layout = overlay.layout()
+            left, top, right, bottom = layout.getContentsMargins()
+            chrome_h = top + bottom
+            chrome_w = left + right
+            visible_items = 0
+            for i in range(layout.count()):
+                item = layout.itemAt(i)
+                widget = item.widget()
+                if widget is overlay.info_text:
+                    continue
+                if widget is not None and not widget.isVisible():
+                    continue
+                hint = item.sizeHint()
+                chrome_h += max(0, hint.height())
+                chrome_w = max(chrome_w, left + right + max(0, hint.width()))
+                visible_items += 1
+            if visible_items:
+                chrome_h += layout.spacing() * visible_items
+
+            target_w = min(max(160, text_w + left + right, chrome_w), max_w)
+            target_h = min(max(70, text_h + chrome_h), max_h)
+            text_target_h = max(35, target_h - chrome_h)
+
+            overlay.info_text.setFixedSize(max(80, target_w - left - right), text_target_h)
+            overlay.setFixedSize(target_w, target_h)
+            self.main_display._position_pixel_info_overlay()
+        except Exception as e:
+            print(f"Error resizing raw pixel info box: {e}")
 
     def closeEvent(self, event):
         # Stop any running threads
@@ -1255,16 +1331,15 @@ class RawViewer(QWidget):
             overlay = self.main_display.pixel_info_box_overlay
             if overlay is not None:
                 overlay.update_info(x, y, raw_matrix, is_rgb=False)
-
-            margin = 10
-            gv = self.main_display.graphics_view
-            viewport = gv.viewport()
-            viewport_rect = viewport.rect()
-            px_x = viewport.mapToParent(viewport_rect.bottomLeft()).x() + margin
-            py_y = viewport.mapToParent(viewport_rect.bottomLeft()).y() - overlay.height() - margin
-            current_pos = overlay.pos()
-            if current_pos.x() != px_x or current_pos.y() != py_y:
-                overlay.move(int(px_x), int(py_y))
+                margin = 10
+                gv = self.main_display.graphics_view
+                viewport = gv.viewport()
+                viewport_rect = viewport.rect()
+                px_x = viewport.mapToParent(viewport_rect.bottomLeft()).x() + margin
+                py_y = viewport.mapToParent(viewport_rect.bottomLeft()).y() - overlay.height() - margin
+                current_pos = overlay.pos()
+                if current_pos.x() != px_x or current_pos.y() != py_y:
+                    overlay.move(int(px_x), int(py_y))
         except Exception as e:
             print(f"Error in on_pixel_info: {e}")
 
