@@ -1279,6 +1279,31 @@ class MagnifierGraphicsView(QGraphicsView):
             finally:
                 painter.end()
         
+        if self.calculate_enabled:
+            painter = QPainter(self.viewport())
+            try:
+                painter.setRenderHint(QPainter.Antialiasing, True)
+                rect_pair = None
+                if self.calculate_drag_active and self.calculate_start_scene and self.calculate_current_scene:
+                    rect_pair = (self.calculate_start_scene, self.calculate_current_scene)
+                elif self.last_calculate_rect is not None:
+                    rect_pair = self.last_calculate_rect
+                if rect_pair is not None:
+                    p1_view = self.mapFromScene(rect_pair[0])
+                    p2_view = self.mapFromScene(rect_pair[1])
+                    draw_rect = QRect(
+                        min(p1_view.x(), p2_view.x()),
+                        min(p1_view.y(), p2_view.y()),
+                        abs(p1_view.x() - p2_view.x()),
+                        abs(p1_view.y() - p2_view.y())
+                    )
+                    pen = QPen(QColor(255, 165, 0), 2, Qt.DashLine)
+                    painter.setPen(pen)
+                    painter.setBrush(QColor(255, 165, 0, 50))
+                    painter.drawRect(draw_rect)
+            finally:
+                painter.end()
+
         # === Draw Mouse Click Line ===
         if self.mouse_click_line_enabled and self.mouse_click_line_pos is not None:
             painter = QPainter(self.viewport())

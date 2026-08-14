@@ -53,11 +53,9 @@ def _process_frame_array_to_hist(frame_like, ignore_extremes):
             num_bins = min(65536, int(frame_arr.max()) + 1)  # Cap at 65536 for memory
         elif original_dtype in (np.uint64, np.int64):
             num_bins = min(65536, int(frame_arr.max()) + 1)  # Cap at 65536 for memory
-        hist_vals = np.clip(a, 0, num_bins - 1).astype(np.int64, copy=False)
     else:
         a = np.asarray(frame_like, dtype=np.uint8).ravel()
         num_bins = 256
-        hist_vals = a
     
     if a.size == 0:
         return np.zeros(num_bins, dtype=np.int64), 0.0, 0.0, 0, 255, 0
@@ -77,11 +75,11 @@ def _process_frame_array_to_hist(frame_like, ignore_extremes):
             mask = (a > 0) & (a < (1 << int(np.log2(num_bins))))
         # keep masked only if enough pixels remain otherwise use all
         if mask.sum() > max(100, a.size * 0.01):
-            a_used = hist_vals[mask]
+            a_used = a[mask]
         else:
-            a_used = hist_vals
+            a_used = a
     else:
-        a_used = hist_vals
+        a_used = a
 
     # very fast histogram in C
     hist = np.bincount(a_used, minlength=num_bins).astype(np.int64)

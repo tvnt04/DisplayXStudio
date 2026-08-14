@@ -171,6 +171,16 @@ class SpaceStudioIntro(QWidget):
         self.activateWindow()
         self._anim.start()
 
+    def mousePressEvent(self, event) -> None:
+        if self._anim.state() == QPropertyAnimation.Running:
+            self._anim.stop()
+            self._on_finished()
+
+    def keyPressEvent(self, event) -> None:
+        if self._anim.state() == QPropertyAnimation.Running:
+            self._anim.stop()
+            self._on_finished()
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------

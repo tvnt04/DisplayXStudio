@@ -21,8 +21,6 @@ import math
 import concurrent.futures  
 import re
 
-
-
 class HistogramWorker(QThread):
     finished = pyqtSignal(dict)  
     error = pyqtSignal(str)
@@ -266,8 +264,6 @@ class HistogramViewer(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-
-
         main_layout = QVBoxLayout()
         main_layout.setContentsMargins(2, 2, 2, 2)
         main_layout.setSpacing(2)
@@ -434,7 +430,6 @@ class HistogramViewer(QWidget):
         self._focused_band = None
         self._selected_bands = set()
         self._curves = {}
-        self._fills = {}
         self._curve_colors = {}
         self._row_to_band = {}
         self._band_to_row = {}
@@ -599,7 +594,6 @@ class HistogramViewer(QWidget):
     def _reset_plot_data(self):
         self.plot_item.clear()
         self._curves.clear()
-        self._fills.clear()
         self._curve_colors.clear()
         self._row_to_band.clear()
         self._band_to_row.clear()
@@ -1117,71 +1111,21 @@ class HistogramViewer(QWidget):
             color = self._curve_colors[key]
             if has_multi:
                 is_selected = key in selected
-                # keep all curves visible but make non-selected almost invisible
-                curve.setVisible(True)
-                if is_selected:
-                    curve.setPen(self._make_pen(color, width=3, alpha=255))
-                    curve.setZValue(3)
-                else:
-                    curve.setPen(self._make_pen(color, width=1, alpha=18))
-                    curve.setZValue(0)
-                # update corresponding fill (adjust brush alpha)
-                fill_tuple = self._fills.get(key)
-                if fill_tuple is not None:
-                    fill_item, baseline = fill_tuple
-                    try:
-                        fill_item.setVisible(True)
-                        if is_selected:
-                            brush = pg.mkBrush(color.red(), color.green(), color.blue(), 110)
-                            fill_item.setZValue(2)
-                        else:
-                            brush = pg.mkBrush(color.red(), color.green(), color.blue(), 12)
-                            fill_item.setZValue(0)
-                        fill_item.setBrush(brush)
-                    except Exception:
-                        pass
+                curve.setVisible(is_selected)
+                curve.setPen(self._make_pen(color, width=3 if is_selected else 1, alpha=255 if is_selected else 28))
+                curve.setZValue(3 if is_selected else 1)
             elif self._focused_band is None:
                 curve.setVisible(True)
                 curve.setPen(self._make_pen(color, width=2, alpha=255))
                 curve.setZValue(2)
-                fill_tuple = self._fills.get(key)
-                if fill_tuple is not None:
-                    fill_item, baseline = fill_tuple
-                    try:
-                        fill_item.setVisible(True)
-                        brush = pg.mkBrush(color.red(), color.green(), color.blue(), 80)
-                        fill_item.setBrush(brush)
-                        fill_item.setZValue(1)
-                    except Exception:
-                        pass
             elif key == self._focused_band:
                 curve.setVisible(True)
                 curve.setPen(self._make_pen(color, width=4, alpha=255))
                 curve.setZValue(3)
-                fill_tuple = self._fills.get(key)
-                if fill_tuple is not None:
-                    fill_item, baseline = fill_tuple
-                    try:
-                        fill_item.setVisible(True)
-                        brush = pg.mkBrush(color.red(), color.green(), color.blue(), 110)
-                        fill_item.setBrush(brush)
-                        fill_item.setZValue(2)
-                    except Exception:
-                        pass
             else:
                 curve.setVisible(True)
                 curve.setPen(self._make_pen(color, width=1, alpha=28))
                 curve.setZValue(1)
-                fill_tuple = self._fills.get(key)
-                if fill_tuple is not None:
-                    fill_item, baseline = fill_tuple
-                    try:
-                        brush = pg.mkBrush(color.red(), color.green(), color.blue(), 20)
-                        fill_item.setBrush(brush)
-                        fill_item.setVisible(True)
-                        fill_item.setZValue(0)
-                    except Exception:
-                        pass
 
         self.stats_table.blockSignals(True)
         self.stats_table.clearSelection()
@@ -1280,39 +1224,15 @@ class HistogramViewer(QWidget):
                 continue
 
             color = QColor(*self._palette[row % len(self._palette)])
-            if x.size > 1:
-                dx = float(np.median(np.diff(x)))
-                if dx <= 0:
-                    dx = 1.0
-            else:
-                dx = 1.0
-            x_edges = np.empty(x.size + 1, dtype=np.float64)
-            x_edges[:-1] = x - (dx * 0.5)
-            x_edges[-1] = x[-1] + (dx * 0.5)
-
-            curve = pg.PlotCurveItem(pen=self._make_pen(color, width=2, alpha=255), antialias=False)
-            curve.setData(x=x_edges, y=y, stepMode=True)
+            curve = pg.PlotCurveItem(pen=self._make_pen(color, width=1, alpha=255), antialias=False)
+            curve.setData(x=x, y=y)
             try:
                 curve.setClickable(True, width=9)
                 curve.sigClicked.connect(lambda *_, b=band: self._on_curve_clicked(b))
             except Exception:
                 pass
-            self.plot_item.addItem(curve)
-            # create an invisible baseline and a translucent fill between curve and baseline
-            try:
-                baseline = pg.PlotCurveItem(pen=pg.mkPen((0, 0, 0, 0)), antialias=False)
-                baseline.setData(x=x_edges, y=np.zeros_like(y), stepMode=True)
-                baseline.setVisible(False)
-                self.plot_item.addItem(baseline)
-                brush = pg.mkBrush(color.red(), color.green(), color.blue(), 80)
-                fill_item = pg.FillBetweenItem(curve, baseline, brush=brush)
-                # Put fill below curves
-                fill_item.setZValue(0)
-                self.plot_item.addItem(fill_item)
-                self._fills[band] = (fill_item, baseline)
-            except Exception:
-                self._fills[band] = None
 
+            self.plot_item.addItem(curve)
             self._curves[band] = curve
             self._curve_colors[band] = color
             self._row_to_band[row] = band
@@ -1453,46 +1373,7 @@ class HistogramViewer(QWidget):
             else:
                 self.focus_band(band)
 
-    def _band_key_to_index(self, band):
-        if isinstance(band, int):
-            return band
-        if isinstance(band, str):
-            m = re.search(r"(\d+)$", band)
-            if m:
-                try:
-                    return int(m.group(1))
-                except Exception:
-                    pass
-        return band
-
-    def _sorted_band_refs(self, bands):
-        refs = [self._band_key_to_index(b) for b in bands]
-        return sorted(refs, key=lambda v: (0, int(v)) if isinstance(v, int) else (1, str(v)))
-
-    def _build_band_stats(self, payload):
-        stats = {}
-        for entry in payload:
-            band = entry.get("band")
-            band_idx = self._band_key_to_index(band)
-            y = np.asarray(entry.get("y", []))
-            total = float(y.sum()) if y.size else 0.0
-            black_pct = (float(y[0]) / total * 100.0) if total > 0 else 0.0
-            sat_pct = (float(y[-1]) / total * 100.0) if total > 0 else 0.0
-            bmin, bmax = self._band_minmax.get(band, (None, None))
-            stats[band_idx] = {
-                "mean": entry.get("mean"),
-                "std":  entry.get("std"),
-                "min":  bmin,
-                "max":  bmax,
-                "saturated_pct": sat_pct,
-                "black_pct": black_pct,
-            }
-        return stats
-
-    def _emit_histogram_state(self, payload):
-        pass
-
-    def update_histogram(self, band_frames, current_frame_index, frame_mode, start_frame=None, end_frame=None, smooth=True, ignore_extremes=True, folder: str = ""):
+    def update_histogram(self, band_frames, current_frame_index, frame_mode, start_frame=None, end_frame=None, smooth=True, ignore_extremes=True):
         self._reset_plot_data()
         if not band_frames:
             self.stats_table.setRowCount(0)
@@ -1505,7 +1386,6 @@ class HistogramViewer(QWidget):
         self.frame_mode = frame_mode
         self.start_frame = start_frame if start_frame is not None else current_frame_index
         self.end_frame = end_frame if end_frame is not None else current_frame_index
-
 
         if getattr(self, 'worker', None):
             try:
@@ -1611,7 +1491,6 @@ class HistogramViewer(QWidget):
             self.hist_progress.setValue(pct)
             if processed >= total:
                 self.hist_progress.hide()
-            self._emit_histogram_state(payload)
         except Exception as e:
             print(f"update_from_bins error: {e}")
 
@@ -1657,7 +1536,6 @@ class HistogramViewer(QWidget):
         self._set_frame_set_minmax(self.min_val, self.max_val)
         self.minmax_updated.emit(self.min_val, self.max_val)
         self.hist_progress.hide()
-        self._emit_histogram_state(payload)
         gc.collect()
 
     def _on_range_finished(self, data):
@@ -1671,7 +1549,6 @@ class HistogramViewer(QWidget):
             self.update_from_bins({k: v for k, v in bins_map.items()}, processed=total, total=total)
             self._set_frame_set_minmax(self.min_val, self.max_val)
             self.minmax_updated.emit(self.min_val, self.max_val)
-            # update_from_bins already emits histogram state
         except Exception as e:
             print(f"_on_range_finished error: {e}")
         finally:

@@ -1879,14 +1879,8 @@ class BandViewsMixin:
         if frames is None or self.current_frame_index >= len(frames):
             self.current_frame_index = 0
 
-        folder = getattr(self, "folder", "")
         if self.histogram_viewer.single_frame_radio.isChecked():
-            self.histogram_viewer.update_histogram(
-                {k: self.band_frames[k] for k in keys if self.band_frames[k] is not None},
-                self.current_frame_index,
-                "Single",
-                folder=folder,
-            )
+            self.histogram_viewer.update_histogram({k: self.band_frames[k] for k in keys if self.band_frames[k] is not None}, self.current_frame_index, "Single")
         else:
             try:
                 start_frame = self.start_frame_entry.value() - 1
@@ -1894,14 +1888,7 @@ class BandViewsMixin:
                 if start_frame < 0 or end_frame >= len(frames) or start_frame > end_frame:
                     return
 
-                self.histogram_viewer.update_histogram(
-                    {k: self.band_frames[k] for k in keys if self.band_frames[k] is not None},
-                    self.current_frame_index,
-                    "Range",
-                    start_frame,
-                    end_frame,
-                    folder=folder,
-                )
+                self.histogram_viewer.update_histogram({k: self.band_frames[k] for k in keys if self.band_frames[k] is not None}, self.current_frame_index, "Range", start_frame, end_frame)
             except ValueError:
                 return
         gc.collect()
@@ -2025,6 +2012,9 @@ class BandViewsMixin:
             for out_idx, i in enumerate(frame_indices):
                 try:
                     QApplication.processEvents()
+                    if num_frames > 1 and hasattr(self, 'update_progress'):
+                        pct = int((out_idx / max(1, num_frames - 1)) * 100)
+                        self.update_progress(pct)
                 except Exception:
                     pass
                 r_display, r_raw = get_frame("R", i)
@@ -2152,7 +2142,11 @@ class BandViewsMixin:
             print(f"Error in preview_rgb_fusion: {e}")
             self.rgb_preview_viewer.show_image(None)
         finally:
-            pass
+            try:
+                if hasattr(self, '_finish_progress_session'):
+                    self._finish_progress_session()
+            except Exception:
+                pass
         gc.collect()
 
     def fit_to_screen(self):
