@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
-import time
 from pathlib import Path
 
 
@@ -31,7 +29,7 @@ def get_current_appimage_path() -> Path:
 
 
 def install_appimage_update(downloaded_path: str | Path) -> None:
-    """Start a helper process that replaces the running AppImage."""
+    """Replace the running AppImage using a system shell helper."""
 
     downloaded = Path(downloaded_path).resolve()
 
@@ -52,75 +50,110 @@ def install_appimage_update(downloaded_path: str | Path) -> None:
             "The downloaded update is the currently running AppImage."
         )
 
-    helper = Path(tempfile.gettempdir()) / (
-        "display-x-studio-updater.py"
-    )
+    helper = Path(tempfile.gettempdir()) / "display-x-studio-updater.sh"
+    log_file = Path(tempfile.gettempdir()) / "display-x-studio-updater.log"
 
-    helper.write_text(
-        """\
-import os
-import shutil
-import signal
-import subprocess
-import sys
-import time
-from pathlib import Path
+    script = """#!/bin/sh
+set -u
 
-old_path = Path(sys.argv[1])
-new_path = Path(sys.argv[2])
-pid = int(sys.argv[3])
+OLD="$1"
+NEW="$2"
+PID="$3"
+LOG="$4"
 
-for _ in range(120):
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        break
-    except PermissionError:
-        pass
-    time.sleep(0.25)
-else:
-    sys.exit(1)
+exec >> "$LOG" 2>&1
 
-backup_path = old_path.with_suffix(old_path.suffix + ".backup")
+echo "========================================"
+echo "Display X Studio updater started"
+echo "OLD=$OLD"
+echo "NEW=$NEW"
+echo "PID=$PID"
+echo "========================================"
 
-try:
-    if backup_path.exists():
-        backup_path.unlink()
+echo "Waiting for application PID $PID to exit..."
 
-    shutil.copy2(old_path, backup_path)
+COUNT=0
 
-    os.replace(new_path, old_path)
+while kill -0 "$PID" 2>/dev/null; do
+    sleep 0.25
+    COUNT=$((COUNT + 1))
 
-    old_path.chmod(
-        old_path.stat().st_mode
-        | 0o111
-    )
+    if [ "$COUNT" -ge 120 ]; then
+        echo "ERROR: application did not exit within timeout."
+        exit 1
+    fi
+done
 
-    backup_path.unlink(missing_ok=True)
+echo "Application exited."
 
-except Exception:
-    try:
-        if backup_path.exists():
-            os.replace(backup_path, old_path)
-    except Exception:
-        pass
-    sys.exit(1)
+if [ ! -f "$OLD" ]; then
+    echo "ERROR: old AppImage does not exist: $OLD"
+    exit 1
+fi
 
-subprocess.Popen(
-    [str(old_path)],
-    start_new_session=True,
-)
-""",
-        encoding="utf-8",
-    )
+if [ ! -f "$NEW" ]; then
+    echo "ERROR: downloaded AppImage does not exist: $NEW"
+    exit 1
+fi
+
+BACKUP="${OLD}.backup"
+
+echo "Creating backup: $BACKUP"
+
+rm -f "$BACKUP"
+
+if ! cp -p "$OLD" "$BACKUP"; then
+    echo "ERROR: could not create backup."
+    exit 1
+fi
+
+echo "Replacing old AppImage..."
+
+if ! mv -f "$NEW" "$OLD"; then
+    echo "ERROR: could not replace AppImage."
+
+    if [ -f "$BACKUP" ]; then
+        mv -f "$BACKUP" "$OLD"
+    fi
+
+    exit 1
+fi
+
+echo "Setting executable permission..."
+
+chmod +x "$OLD"
+
+if [ ! -x "$OLD" ]; then
+    echo "ERROR: new AppImage is not executable."
+
+    if [ -f "$BACKUP" ]; then
+        mv -f "$BACKUP" "$OLD"
+    fi
+
+    exit 1
+fi
+
+rm -f "$BACKUP"
+
+echo "Launching updated application..."
+
+nohup "$OLD" >/dev/null 2>&1 &
+
+echo "Update completed successfully."
+exit 0
+"""
+
+    helper.write_text(script, encoding="utf-8")
+    helper.chmod(0o700)
 
     subprocess.Popen(
         [
-            sys.executable,
+            "/bin/sh",
             str(helper),
             str(current),
             str(downloaded),
             str(os.getpid()),
+            str(log_file),
         ],
         start_new_session=True,
         stdout=subprocess.DEVNULL,
