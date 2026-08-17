@@ -1,15 +1,17 @@
-name: Build Display X Studio
+name: Display X Studio
 
 on:
   push:
     branches:
       - main
       - 'feature/**'
+    tags:
+      - 'v*'
   pull_request:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -21,12 +23,15 @@ jobs:
       matrix:
         include:
           - os: ubuntu-22.04
+            platform: linux
             artifact: Display-X-Studio-linux-x86_64
 
           - os: windows-2022
+            platform: windows
             artifact: Display-X-Studio-windows-x86_64
 
           - os: macos-14
+            platform: macos
             artifact: Display-X-Studio-macos-arm64
 
     steps:
@@ -40,16 +45,18 @@ jobs:
           cache: pip
           cache-dependency-path: requirement.txt
 
-      - name: Install system dependencies (Linux)
-        if: runner.os == 'Linux'
+      - name: Install Linux dependencies
+        if: matrix.platform == 'linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             libgl1 \
             libglib2.0-0 \
-            libxkbcommon-x11-0
+            libxkbcommon-x11-0 \
+            fuse3
 
       - name: Install Python dependencies
+        shell: bash
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirement.txt
@@ -66,53 +73,182 @@ jobs:
             --add-data "logo.png:." \
             main.py
 
+      # -------------------------
+      # Linux
+      # -------------------------
+
       - name: Verify Linux executable
-        if: runner.os == 'Linux'
+        if: matrix.platform == 'linux'
         run: |
           test -x "dist/Display X Studio/Display X Studio"
 
+      - name: Install appimagetool
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          wget -q \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage \
+            -O appimagetool
+
+          chmod +x appimagetool
+
+      - name: Prepare Linux AppDir
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          mkdir -p AppDir/usr/bin
+
+          cp -a \
+            "dist/Display X Studio/." \
+            "AppDir/usr/bin/"
+
+          cat > AppDir/AppRun <<'EOF'
+          #!/bin/sh
+          HERE="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+          exec "$HERE/usr/bin/Display X Studio/Display X Studio" "$@"
+          EOF
+
+          chmod +x AppDir/AppRun
+
+          mkdir -p \
+            AppDir/usr/share/icons/hicolor/256x256/apps
+
+          cp logo.png \
+            AppDir/usr/share/icons/hicolor/256x256/apps/display-x-studio.png
+
+          cp logo.png AppDir/display-x-studio.png
+
+          cat > AppDir/Display\ X\ Studio.desktop <<'EOF'
+          [Desktop Entry]
+          Type=Application
+          Name=Display X Studio
+          Comment=Display X Studio
+          Exec=Display X Studio
+          Icon=display-x-studio
+          Categories=Graphics;
+          Terminal=false
+          EOF
+
+      - name: Build Linux AppImage
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          ./appimagetool \
+            AppDir \
+            "${{ matrix.artifact }}.AppImage"
+
+      # -------------------------
+      # Windows
+      # -------------------------
+
       - name: Verify Windows executable
-        if: runner.os == 'Windows'
+        if: matrix.platform == 'windows'
         shell: pwsh
         run: |
           if (-not (Test-Path 'dist/Display X Studio/Display X Studio.exe')) {
             throw 'PyInstaller did not produce the Windows executable.'
           }
 
+      - name: Package Windows
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          7z a \
+            "${{ matrix.artifact }}.zip" \
+            "dist/Display X Studio/*"
+
+      # -------------------------
+      # macOS
+      # -------------------------
+
       - name: Verify macOS application
-        if: runner.os == 'macOS'
+        if: matrix.platform == 'macos'
         run: |
           test -d "dist/Display X Studio.app"
 
-      - name: Package Linux build
-        if: runner.os == 'Linux'
+      - name: Create macOS DMG
+        if: matrix.platform == 'macos'
         shell: bash
         run: |
-          mkdir -p artifacts
-          tar -C dist \
-            -czf "artifacts/${{ matrix.artifact }}.tar.gz" \
-            "Display X Studio"
+          hdiutil create \
+            -volname "Display X Studio" \
+            -srcfolder "dist/Display X Studio.app" \
+            -ov \
+            -format UDZO \
+            "${{ matrix.artifact }}.dmg"
 
-      - name: Package Windows build
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path artifacts
-          7z a "artifacts/${{ matrix.artifact }}.zip" "dist/Display X Studio/*"
+      # -------------------------
+      # Checksums
+      # -------------------------
 
-      - name: Package macOS build
-        if: runner.os == 'macOS'
+      - name: Generate SHA-256 checksum
         shell: bash
         run: |
-          mkdir -p artifacts
-          tar -C dist \
-            -czf "artifacts/${{ matrix.artifact }}.tar.gz" \
-            "Display X Studio.app"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            sha256sum "${{ matrix.artifact }}.zip" > "${{ matrix.artifact }}.sha256"
+          elif [[ "$RUNNER_OS" == "macOS" ]]; then
+            shasum -a 256 "${{ matrix.artifact }}.dmg" > "${{ matrix.artifact }}.sha256"
+          else
+            sha256sum "${{ matrix.artifact }}.AppImage" > "${{ matrix.artifact }}.sha256"
+          fi
 
-      - name: Upload build artifact
+      # -------------------------
+      # Upload CI artifacts
+      # -------------------------
+
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: artifacts/*
+          path: |
+            *.AppImage
+            *.zip
+            *.dmg
+            *.sha256
           if-no-files-found: error
           retention-days: 14
+
+  # =====================================
+  # Create GitHub Release for version tags
+  # =====================================
+
+  release:
+    name: Create GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Display-X-Studio-linux-x86_64
+          path: release-assets
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Display-X-Studio-windows-x86_64
+          path: release-assets
+
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Display-X-Studio-macos-arm64
+          path: release-assets
+
+      - name: Generate combined checksums
+        working-directory: release-assets
+        run: |
+          cat *.sha256 > SHA256SUMS.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            release-assets/*.AppImage
+            release-assets/*.zip
+            release-assets/*.dmg
+            release-assets/SHA256SUMS.txt
