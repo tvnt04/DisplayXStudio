@@ -1417,6 +1417,8 @@ class BandViewsMixin:
             pixel_info_callback=self.update_pixel_info,
             matrix_size_var=self.matrix_size_var
         )
+        viewer.is_individual = True
+        viewer.key = key
         widget.layout().addWidget(viewer)
         widget.setObjectName("loaded")
         if key in self.unloaded_keys:
@@ -1476,6 +1478,8 @@ class BandViewsMixin:
             pixel_info_callback=self.update_pixel_info,
             matrix_size_var=self.matrix_size_var
         )
+        viewer.is_individual = True
+        viewer.key = 'pan'
         widget.layout().addWidget(viewer)
         widget.setObjectName("loaded")
         if 'pan' in self.unloaded_keys:

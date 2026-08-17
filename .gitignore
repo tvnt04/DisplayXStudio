@@ -32,3 +32,7 @@ DecodeSoftware/
 Acq000000_*
 
 Display-X-Studio-linux-*.tar.gz
+# AppImage build artifacts and local tooling
+packaging/appimage/AppDir/
+packaging/tools/
+*.AppImage
