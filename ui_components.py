@@ -17,13 +17,13 @@ import math
 from PIL import Image
 import traceback
 
-import concurrent.futures  
+import concurrent.futures
 import re
 
 
 
 class HistogramWorker(QThread):
-    finished = pyqtSignal(dict)  
+    finished = pyqtSignal(dict)
     error = pyqtSignal(str)
     progress = pyqtSignal(int)
 
@@ -145,7 +145,7 @@ class RangeHistogramThread(QThread):
         # stride^2 >= (w*h*n_frames) / sample_budget
         ratio = (total_pixels + self.sample_budget - 1) // self.sample_budget
         # stride = ceil(sqrt(ratio)) -- use math.sqrt for estimate (small, inexpensive)
-        
+
         stride = int(math.ceil(math.sqrt(ratio)))
         return max(1, stride)
 
@@ -234,7 +234,7 @@ class RangeHistogramThread(QThread):
 
                 processed += 1
                 current_time = time.time()
-                
+
                 # Throttle progressive updates to at most 10 FPS to prevent UI flooding and OOM
                 if processed == total or (current_time - last_emit_time >= 0.1):
                     self.bins_ready.emit({k: accum[k].copy() for k in keys}, processed, total)
@@ -257,7 +257,7 @@ class RangeHistogramThread(QThread):
 
             self.finished.emit({'bins': {k: v.copy() for k, v in accum.items()}, 'min_val': overall_min, 'max_val': overall_max})
         except Exception as e:
-            
+
             traceback.print_exc()
             self.error.emit(str(e))
 
@@ -955,11 +955,11 @@ class HistogramViewer(QWidget):
         minmax_h = self.minmax_bar.sizeHint().height() if hasattr(self, "minmax_bar") else 0
         margins = 20
         available_h = max(120, self._left_panel.height() - legend_h - minmax_h - margins)
-        
+
         # Use the same calculation regardless of whether data is loaded or not
         # This ensures the histogram stays within screen bounds in both cases
         plot_h = max(160, int(available_h * 0.93))
-        
+
         self.plot.setFixedHeight(plot_h)
         # Force layout update, then align table to the actual plotted widget geometry.
         lay = self._left_panel.layout()
@@ -1352,7 +1352,14 @@ class HistogramViewer(QWidget):
         self._fit_table_rows_to_height()
         title_color = getattr(self, "_axis_color_hex", "#2f3a4a")
         self.plot_item.setTitle(f"<span style='color:{title_color}; font-weight:600;'>{title_text}</span>")
-        self._default_x_range = (0.0, xmax * 1.01)
+
+        # Crop histogram to active data range instead of theoretical max
+        if overall_min is not None and overall_max is not None and overall_max > overall_min:
+            span = overall_max - overall_min
+            pad = span * 0.05
+            self._default_x_range = (max(0.0, overall_min - pad), overall_max + pad)
+        else:
+            self._default_x_range = (0.0, xmax * 1.01)
         self._default_y_range = (0.0, ymax * 1.05)
         self._max_zoom_level = int(max(1, min(24, math.ceil(math.log2(max(1.0, self._default_y_range[1]))))))
         self._zoom_level = min(self._zoom_level, self._max_zoom_level)
@@ -1510,7 +1517,7 @@ class HistogramViewer(QWidget):
         self.frame_mode = frame_mode
         self.start_frame = start_frame if start_frame is not None else current_frame_index
         self.end_frame = end_frame if end_frame is not None else current_frame_index
-        
+
         # Detect actual bitdepth to force consistent x-axis scale
         detected_bd = 8
         for obj in band_frames.values():
@@ -1601,7 +1608,7 @@ class HistogramViewer(QWidget):
                     range_max = bmax if range_max is None else max(range_max, bmax)
                 x = np.arange(len(b), dtype=np.float64)
                 mean, var, sd, cnt = self._stats_from_hist(b, x)
-                
+
                 # Downsample for fast plotting (keep full domain so axis scales correctly)
                 max_bins = 1024
                 if len(b) > max_bins:
@@ -2412,18 +2419,18 @@ class ParameterDialog(QDialog):
         self.height_entry.textChanged.connect(self._update_effective_height_hint)
         self.tdi_stage_var.currentTextChanged.connect(self._update_effective_height_hint)
         self._update_effective_height_hint()
-        
+
         buttons = QHBoxLayout()
         ok_btn = QPushButton("OK")
         ok_btn.setToolTip("Apply parameters")
         ok_btn.clicked.connect(self.accept)
         buttons.addWidget(ok_btn)
-        
+
         cancel_btn = QPushButton("Cancel")
         cancel_btn.setToolTip("Close without changes")
         cancel_btn.clicked.connect(self.reject)
         buttons.addWidget(cancel_btn)
-        
+
         layout.addRow(buttons)
 
     def _update_effective_height_hint(self):
@@ -2444,7 +2451,7 @@ class ParameterDialog(QDialog):
             self.effective_height_label.setText(
                 f"{effective_height} px ({raw_height} / {tdi_stage}; TDI stages are used to derive band height)"
             )
-    
+
     def get_parameters(self):
         try:
             raw_height = int(self.height_entry.text())

@@ -3020,7 +3020,13 @@ class BandStitchProApp(BandViewsMixin, QWidget):
         for key in keys:
             frames = self.band_frames.get(key)
             if frames and self.current_frame_index < len(frames):
-                frame = frames[self.current_frame_index]
+                try:
+                    if hasattr(frames, 'get_raw'):
+                        frame = frames.get_raw(self.current_frame_index)
+                    else:
+                        frame = frames[self.current_frame_index]
+                except Exception:
+                    frame = frames[self.current_frame_index]
                 min_val = min(min_val, float(np.min(frame)))
                 max_val = max(max_val, float(np.max(frame)))
         if min_val == float('inf') or max_val == float('-inf'):

@@ -44,7 +44,7 @@ class UnloadThread(QThread):
 
             self.progress.emit(50)
             gc.collect()
-            
+
             self.progress.emit(80)
             try:
                 import ctypes
@@ -52,7 +52,7 @@ class UnloadThread(QThread):
                 libc.malloc_trim(0)
             except Exception:
                 pass
-            
+
             self.progress.emit(100)
         except Exception:
             pass
@@ -304,7 +304,7 @@ class RawViewer(QWidget):
         self.play_btn.clicked.connect(self.toggle_play)
         self.play_btn.setEnabled(False)
         frame_group_layout.addWidget(self.play_btn)
-        
+
         self.speed_combo = QComboBox()
         self.speed_combo.addItems(["0.25x", "0.5x", "1.0x", "2.0x", "4.0x", "10.0x"])
         self.speed_combo.setCurrentText("1.0x")
@@ -323,7 +323,7 @@ class RawViewer(QWidget):
         self.enhance_cb = QCheckBox("Auto Contrast")
         self.enhance_cb.setChecked(False)
         self.enhance_cb.setToolTip("Apply Min/Max contrast")
-        self.enhance_cb.stateChanged.connect(self.update_display)
+        self.enhance_cb.stateChanged.connect(self._on_auto_contrast_changed)
         contrast_group_layout.addWidget(self.enhance_cb)
         # Min/Max controls
         contrast_group_layout.addWidget(QLabel("Min:"))
@@ -608,7 +608,7 @@ class RawViewer(QWidget):
                 self.loading_thread.wait(3000)
         except Exception as e:
             print(f"[DEBUG] Error stopping loading_thread: {e}")
-        
+
         try:
             if hasattr(self, 'stack_thread') and self.stack_thread and self.stack_thread.isRunning():
                 self.stack_thread.requestInterruption()
@@ -616,7 +616,7 @@ class RawViewer(QWidget):
                 self.stack_thread.wait(3000)
         except Exception as e:
             print(f"[DEBUG] Error stopping stack_thread: {e}")
-        
+
         super().closeEvent(event)
 
     def load_raw_file(self):
@@ -948,6 +948,18 @@ class RawViewer(QWidget):
         self.progress_bar.setVisible(False)
         QMessageBox.critical(self, "Load Error", msg)
 
+    def _on_auto_contrast_changed(self, state):
+        if state == Qt.Checked and self.raw_data is not None:
+            c_min = float(np.min(self.raw_data))
+            c_max = float(np.max(self.raw_data))
+            self.min_spin.blockSignals(True)
+            self.max_spin.blockSignals(True)
+            self.min_spin.setValue(c_min)
+            self.max_spin.setValue(c_max)
+            self.min_spin.blockSignals(False)
+            self.max_spin.blockSignals(False)
+        self.update_display()
+
     def update_display(self):
         if self.normalized_data is None:
             return
@@ -976,10 +988,19 @@ class RawViewer(QWidget):
         max_dn = float(self._current_max_dn())
         self.min_spin.setRange(0, max_dn)
         self.max_spin.setRange(0, max_dn)
-        self.min_spin.setValue(0)
-        self.max_spin.setValue(max_dn)
-        self.contrast_min = 0
-        self.contrast_max = int(max_dn)
+
+        # Default to actual data limits if available, otherwise bitdepth max
+        if self.raw_data is not None:
+            c_min = float(np.min(self.raw_data))
+            c_max = float(np.max(self.raw_data))
+        else:
+            c_min = 0.0
+            c_max = max_dn
+
+        self.min_spin.setValue(c_min)
+        self.max_spin.setValue(c_max)
+        self.contrast_min = int(c_min)
+        self.contrast_max = int(c_max)
         try:
             tip = f"Native DN range for {int(self.bitdepth)}-bit data: 0-{int(max_dn)}"
             self.min_spin.setToolTip(tip)
@@ -1477,7 +1498,7 @@ class RawViewer(QWidget):
     def toggle_play(self):
         if getattr(self, 'num_frames', 0) <= 1:
             return
-        
+
         self.playing = not getattr(self, 'playing', False)
         if self.playing:
             self.play_btn.setText("⏸ Pause")
@@ -1491,7 +1512,7 @@ class RawViewer(QWidget):
                 self.play_timer.stop()
             except Exception:
                 pass
-                
+
     def change_speed(self, text):
         try:
             rate = float(text[:-1])
@@ -1500,13 +1521,13 @@ class RawViewer(QWidget):
                 self.play_timer.setInterval(self.play_delay)
         except Exception as e:
             print(f"Speed change error: {e}")
-            
+
     def play_next_frame(self):
         if not getattr(self, 'playing', False) or getattr(self, 'num_frames', 0) <= 1:
             self.play_btn.setText("▶ Play")
             self.playing = False
             return
-            
+
         current = self.frame_index_spin.value()
         if current < self.num_frames:
             self.frame_index_spin.setValue(current + 1)
