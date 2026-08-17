@@ -153,9 +153,7 @@ jobs:
         if: matrix.platform == 'windows'
         shell: pwsh
         run: |
-          7z a \
-            "${{ matrix.artifact }}.zip" \
-            "dist/Display X Studio/*"
+          7z a "${{ matrix.artifact }}.zip" "dist/Display X Studio/*"
 
       # -------------------------
       # macOS
