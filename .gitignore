@@ -36,3 +36,6 @@ Display-X-Studio-linux-*.tar.gz
 packaging/appimage/AppDir/
 packaging/tools/
 *.AppImage
+
+# Local AppImage build workspace
+packaging/appimage/
