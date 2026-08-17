@@ -1425,7 +1425,10 @@ class BandViewsMixin:
 
         # Restore shared and per-band states
         viewer.graphics_view.mouse_zoom_enabled = self.shared_mouse_zoom_enabled
-        viewer.graphics_view.toggle_magnifier(self.shared_magnifier_enabled)
+        if hasattr(viewer, 'magnifier_toggle'):
+            viewer.magnifier_toggle.setChecked(self.shared_magnifier_enabled)
+        else:
+            viewer.graphics_view.toggle_magnifier(self.shared_magnifier_enabled)
         viewer.graphics_view.set_magnifier_zoom(int(self.shared_magnifier_zoom * 10))
         viewer.graphics_view.magnifier_radius = self.shared_magnifier_radius
         viewer.graphics_view.torch_enabled = self.shared_magnifier_torch
@@ -1480,7 +1483,10 @@ class BandViewsMixin:
 
         # Restore shared and per-band (use 'pan' key)
         viewer.graphics_view.mouse_zoom_enabled = self.shared_mouse_zoom_enabled
-        viewer.graphics_view.toggle_magnifier(self.shared_magnifier_enabled)
+        if hasattr(viewer, 'magnifier_toggle'):
+            viewer.magnifier_toggle.setChecked(self.shared_magnifier_enabled)
+        else:
+            viewer.graphics_view.toggle_magnifier(self.shared_magnifier_enabled)
         viewer.graphics_view.set_magnifier_zoom(int(self.shared_magnifier_zoom * 10))
         viewer.graphics_view.magnifier_radius = self.shared_magnifier_radius
         viewer.graphics_view.torch_enabled = self.shared_magnifier_torch

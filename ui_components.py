@@ -2053,7 +2053,7 @@ class PixelInfoBox(QWidget):
             except Exception:
                 pass
         # Also show extended statistics if available (min/max/count)
-        if calc_available:
+        if self.calculate_mode and calc_available:
             try:
                 if self.last_calc_min is not None:
                     self.info_text.append(f"  Min: {self.last_calc_min:.6f}")
@@ -2081,6 +2081,27 @@ class PixelInfoBox(QWidget):
         self.last_is_rgb = is_rgb
         self.last_dn_value = dn_value
         self.build_info_text()
+        if not self.isVisible() and not self._is_floating:
+            self.show()
+
+    def clear_measurements(self):
+        self.last_oa = 0
+        self.last_ob = 0
+        self.last_ab = 0
+        try:
+            self.last_force_measure = False
+        except Exception:
+            pass
+        self.build_info_text()
+
+    def clear_calculations(self):
+        self.last_calc_mean = None
+        self.last_calc_variance = None
+        self.last_calc_std = None
+        self.last_calc_min = None
+        self.last_calc_max = None
+        self.last_calc_count = None
+        self.build_info_text()
 
     def set_measure_mode(self, enabled):
         self.measure_mode = enabled
@@ -2093,7 +2114,15 @@ class PixelInfoBox(QWidget):
                 self.last_force_measure = False
             except Exception:
                 pass
-            self.build_info_text()
+            if self._is_floating:
+                self.hide()
+        self.last_calc_mean = None
+        self.last_calc_variance = None
+        self.last_calc_std = None
+        self.last_calc_min = None
+        self.last_calc_max = None
+        self.last_calc_count = None
+        self.build_info_text()
 
     def set_interaction_mode(self, mode):
         mode = str(mode).lower()
@@ -2115,6 +2144,8 @@ class PixelInfoBox(QWidget):
             self.last_calc_min = None
             self.last_calc_max = None
             self.last_calc_count = None
+        if mode == "off" and self._is_floating:
+            self.hide()
         self.build_info_text()
 
     def update_measurements(self, oa, ob, ab):

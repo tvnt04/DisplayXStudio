@@ -1,0 +1,7 @@
+FROM registry.access.redhat.com/ubi9/python-312
+
+WORKDIR /workspace
+
+COPY requirement.txt /tmp/requirement.txt
+
+RUN python -m pip install --no-cache-dir -r /tmp/requirement.txt

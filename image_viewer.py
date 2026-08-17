@@ -141,6 +141,44 @@ class MagnifierGraphicsView(QGraphicsView):
         self.annotation_color = QColor(255, 0, 0, 200)  # Red with alpha
         self.annotation_pen_width = 2
 
+    def _clear_ui_measurements(self):
+        try:
+            app = self.parent().get_app() if (self.parent() is not None and hasattr(self.parent(), 'get_app')) else None
+            if app and hasattr(app, 'pixel_info_box') and app.pixel_info_box:
+                app.pixel_info_box.clear_measurements()
+        except Exception:
+            pass
+        try:
+            parent = self.parent()
+            if parent and hasattr(parent, 'pixel_info_box_overlay') and parent.pixel_info_box_overlay:
+                parent.pixel_info_box_overlay.clear_measurements()
+        except Exception:
+            pass
+        try:
+            if hasattr(self, 'pixel_info_box_overlay') and self.pixel_info_box_overlay:
+                self.pixel_info_box_overlay.clear_measurements()
+        except Exception:
+            pass
+
+    def _clear_ui_calculations(self):
+        try:
+            app = self.parent().get_app() if (self.parent() is not None and hasattr(self.parent(), 'get_app')) else None
+            if app and hasattr(app, 'pixel_info_box') and app.pixel_info_box:
+                app.pixel_info_box.clear_calculations()
+        except Exception:
+            pass
+        try:
+            parent = self.parent()
+            if parent and hasattr(parent, 'pixel_info_box_overlay') and parent.pixel_info_box_overlay:
+                parent.pixel_info_box_overlay.clear_calculations()
+        except Exception:
+            pass
+        try:
+            if hasattr(self, 'pixel_info_box_overlay') and self.pixel_info_box_overlay:
+                self.pixel_info_box_overlay.clear_calculations()
+        except Exception:
+            pass
+
     def set_interaction_mode(self, mode: str):
         mode = str(mode).lower()
         # allow a combined 'both' mode to enable both measure and calculate
@@ -649,8 +687,9 @@ class MagnifierGraphicsView(QGraphicsView):
             # Single-mode behaviors (unchanged)
             if self.measure_enabled and event.button() == Qt.LeftButton:
                 scene_pos = self.mapToScene(event.pos())
-                if len(self.measure_points) == 0 and len(self.last_measure_points) > 0:
+                if len(self.measure_points) == 0:
                     self.last_measure_points = []
+                    self._clear_ui_measurements()
                     self.viewport().update()
                 self.measure_points.append(scene_pos)
                 if len(self.measure_points) == 2:
@@ -667,6 +706,7 @@ class MagnifierGraphicsView(QGraphicsView):
                 self.calculate_start_scene = scene_pos
                 self.calculate_current_scene = scene_pos
                 self.last_calculate_rect = None
+                self._clear_ui_calculations()
                 self.viewport().update()
                 event.accept()
                 return
@@ -854,6 +894,7 @@ class MagnifierGraphicsView(QGraphicsView):
                     self.calculate_start_scene = self.pending_press_scene
                     self.calculate_current_scene = mouse_scene
                     self.last_calculate_rect = None
+                    self._clear_ui_calculations()
                     self.viewport().update()
         if self.calculate_enabled and self.calculate_drag_active:
             self.calculate_current_scene = mouse_scene
@@ -896,8 +937,9 @@ class MagnifierGraphicsView(QGraphicsView):
             if self.pending_interaction == 'undecided':
                 scene_pos = self.pending_press_scene or self.mapToScene(event.pos())
                 # Append measure point
-                if len(self.measure_points) == 0 and len(self.last_measure_points) > 0:
+                if len(self.measure_points) == 0:
                     self.last_measure_points = []
+                    self._clear_ui_measurements()
                     self.viewport().update()
                 self.measure_points.append(scene_pos)
                 if len(self.measure_points) == 2:
@@ -1570,10 +1612,10 @@ class GraphicsImageViewer(QWidget):
                         self.toolbox_btn.setStyleSheet(self.interaction_mode_styles[mode])
                     except Exception:
                         pass
-                parent = self.parent()
-                app = parent.get_app() if (parent is not None and hasattr(parent, 'get_app')) else None
-                if app and hasattr(app, 'pixel_info_box'):
+                app = self.get_app()
+                if app and hasattr(app, 'pixel_info_box') and app.pixel_info_box:
                     app.pixel_info_box.set_interaction_mode(mode)
+                parent = self.parent()
                 if parent and hasattr(parent, 'pixel_info_box_overlay') and parent.pixel_info_box_overlay is not None:
                     parent.pixel_info_box_overlay.set_interaction_mode(mode)
                 if hasattr(self, 'pixel_info_box_overlay') and self.pixel_info_box_overlay is not None:
@@ -1601,6 +1643,20 @@ class GraphicsImageViewer(QWidget):
 
         def _on_tool_toggled(tool, checked):
             try:
+                if checked:
+                    # If magnifier is active, reject the tool check and alert the user
+                    if hasattr(self, 'magnifier_toggle') and self.magnifier_toggle.isChecked():
+                        QMessageBox.warning(
+                            self,
+                            "Feature Locked",
+                            "Magnifier is active. Please disable it to use the Toolbox features (Measure/Calculate)."
+                        )
+                        action = self.action_measure if tool == 'measure' else self.action_calculate
+                        action.blockSignals(True)
+                        action.setChecked(False)
+                        action.blockSignals(False)
+                        return
+
                 # determine resulting mode
                 m = self.action_measure.isChecked()
                 c = self.action_calculate.isChecked()
@@ -1633,6 +1689,20 @@ class GraphicsImageViewer(QWidget):
         self.torch_toggle.setChecked(False)
         self.torch_toggle.setEnabled(False)  # Only enabled when magnifier is ON
         def _on_magnifier_toggled(checked: bool):
+            if checked:
+                # If either tool is active, reject magnifier check and alert the user
+                m = self.action_measure.isChecked() if hasattr(self, 'action_measure') else False
+                c = self.action_calculate.isChecked() if hasattr(self, 'action_calculate') else False
+                if m or c:
+                    QMessageBox.warning(
+                        self,
+                        "Feature Locked",
+                        "Toolbox feature (Measure/Calculate) is active. Please disable it to use the Magnifier."
+                    )
+                    self.magnifier_toggle.blockSignals(True)
+                    self.magnifier_toggle.setChecked(False)
+                    self.magnifier_toggle.blockSignals(False)
+                    return
             if not checked:
                 self.torch_toggle.setChecked(False)
                 try:

@@ -326,7 +326,7 @@ class ModeSelectionDialog(QDialog):
     def keyPressEvent(self, event):
         """Allow up/down arrow keys to cycle through radio buttons regardless of focus."""
         if event.key() in (Qt.Key_Down, Qt.Key_Up):
-            radios = [self.band_radio, self.raw_radio, self.video_radio, self.live_radio, self.tiled_radio]
+            radios = [self.band_radio, self.raw_radio, self.video_radio, self.tiled_radio]
             current_idx = -1
             for i, r in enumerate(radios):
                 if r.isChecked():

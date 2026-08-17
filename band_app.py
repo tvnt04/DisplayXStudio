@@ -680,10 +680,13 @@ class BandStitchProApp(BandViewsMixin, QWidget):
         for key in self.viewer_states:
             viewer = self._get_viewer_for_key(key)
             if viewer:
-                viewer.graphics_view.toggle_magnifier(self.shared_magnifier_enabled)
-                viewer.graphics_view.magnifier_zoom = self.shared_magnifier_zoom
-                viewer.graphics_view.magnifier_radius = self.shared_magnifier_radius
-                viewer.graphics_view.torch_enabled = self.shared_magnifier_torch
+                if hasattr(viewer, 'magnifier_toggle'):
+                    viewer.magnifier_toggle.setChecked(self.shared_magnifier_enabled)
+                else:
+                    viewer.graphics_view.toggle_magnifier(self.shared_magnifier_enabled)
+                    viewer.graphics_view.magnifier_zoom = self.shared_magnifier_zoom
+                    viewer.graphics_view.magnifier_radius = self.shared_magnifier_radius
+                    viewer.graphics_view.torch_enabled = self.shared_magnifier_torch
     def _sync_shared_magnifier_zoom(self, value):
         self.shared_magnifier_zoom = value / 10.0
         # Apply to all
