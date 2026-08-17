@@ -4,7 +4,7 @@ from PyQt5.QtWidgets import (
     QDialog, QRadioButton, QButtonGroup, QMessageBox, QCheckBox, QSplitter, QToolTip, QMenu, QAction,
     QFrame
 )
-from PyQt5.QtCore import Qt, QTimer, QCoreApplication, QThread, QObject, QEvent, QPoint, qInstallMessageHandler
+from PyQt5.QtCore import Qt, QTimer, QCoreApplication, QThread, QObject, QEvent, QPoint, qInstallMessageHandler, pyqtSignal
 from PyQt5.QtGui import QPalette, QColor, QTransform, QKeySequence, QCloseEvent, QCursor, QHelpEvent
 from types import SimpleNamespace
 import sys
@@ -12,8 +12,10 @@ import time
 from band_app import BandStitchProApp
 import gc
 import json
+import subprocess
 import os
 import tempfile
+from pathlib import Path
 import psutil
 from app_paths import get_app_data_path, migrate_legacy_file
 from ui_components import *
@@ -413,6 +415,34 @@ class SecondaryMonitorWindow(QMainWindow):
         super().closeEvent(event)
 
 
+class UpdateCheckWorker(QThread):
+    result_ready = pyqtSignal(object)
+
+    def run(self):
+        try:
+            from updater import check_for_update
+            info = check_for_update()
+            self.result_ready.emit(info)
+        except Exception as e:
+            self.result_ready.emit(e)
+
+class UpdateDownloadWorker(QThread):
+    result_ready = pyqtSignal(object)
+
+    def __init__(self, update_info, parent=None):
+        super().__init__(parent)
+        self.update_info = update_info
+
+    def run(self):
+        try:
+            from updater import download_update
+
+            path = download_update(self.update_info)
+            self.result_ready.emit(path)
+
+        except Exception as e:
+            self.result_ready.emit(e)
+
 class MainApp(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -592,6 +622,19 @@ class MainApp(QMainWindow):
         button_layout.addStretch()
 
 
+        self.update_button = QToolButton()
+        self.update_button.setText("↑ Update")
+        self.update_button.setToolTip("Update Available! Click to download.")
+        self.update_button.setStyleSheet("""
+            QToolButton {
+                color: #4CAF50;
+                font-weight: bold;
+            }
+        """)
+        self.update_button.hide()
+        self.update_button.clicked.connect(self._on_update_clicked)
+        self._top_right_controls.addWidget(self.update_button)
+
         self._top_right_controls.addWidget(self.display_menu_button)
 
         self.add_new_tab()
@@ -625,6 +668,94 @@ class MainApp(QMainWindow):
         self._refresh_display_menu()
         QTimer.singleShot(0, self._fit_window_to_screen)
         QTimer.singleShot(0, self._update_tab_navigation_controls)
+
+        self._update_worker = UpdateCheckWorker(self)
+        self._update_worker.result_ready.connect(self._on_update_check_result)
+        self._update_worker.start()
+
+    def _on_update_check_result(self, result):
+        if isinstance(result, Exception):
+            print(f"Update check failed: {result}", file=sys.stderr)
+            return
+        self._update_info = result
+        if result and result.update_available:
+            self.update_button.show()
+
+    def _on_update_clicked(self):
+        if not hasattr(self, "_update_info") or not self._update_info:
+            return
+
+        if not self._update_info.asset_url:
+            QMessageBox.warning(
+                self,
+                "Update Unavailable",
+                "A compatible update package could not be found.",
+            )
+            return
+
+        self.update_button.setEnabled(False)
+        self.update_button.setText("Downloading...")
+
+        self._update_download_worker = UpdateDownloadWorker(
+            self._update_info,
+            self,
+        )
+        self._update_download_worker.result_ready.connect(
+            self._on_update_download_result
+        )
+        self._update_download_worker.start()
+
+
+    def _on_update_download_result(self, result):
+        """Handle the result of the update download."""
+        if isinstance(result, Exception):
+            QMessageBox.warning(
+                self,
+                "Download Failed",
+                f"Failed to download update:\n{result}",
+            )
+            self.update_button.setEnabled(True)
+            self.update_button.setText("↑ Update")
+            return
+
+        downloaded_path = result  # should be a Path object
+
+        try:
+            self._install_update(downloaded_path)
+
+        except Exception as e:
+            QMessageBox.warning(
+                self,
+                "Installation Failed",
+                f"Failed to install update:\n{e}",
+            )
+            self.update_button.setEnabled(True)
+            self.update_button.setText("↑ Update")
+
+    def _install_update(self, downloaded_path: Path) -> None:
+        """
+        Install the downloaded update asset.
+        """
+        system = platform.system()
+
+        if system == "Linux":
+            self._install_appimage_update(downloaded_path)
+
+        elif system == "Windows":
+            self._install_windows_update(downloaded_path)
+
+        elif system == "Darwin":
+            self._install_macos_update(downloaded_path)
+
+        else:
+            raise RuntimeError(f"Unsupported OS for update: {system}")
+
+
+    def _install_appimage_update(self, downloaded_path: Path) -> None:
+        """Install a downloaded Linux AppImage update."""
+        from app_updater import install_appimage_update
+
+        install_appimage_update(downloaded_path)
 
     def _read_json_file(self, path, default=None):
         if not os.path.exists(path):
@@ -707,11 +838,25 @@ class MainApp(QMainWindow):
         if checked:
             # turn on dark mode
             self.dark_mode_button.setText("🌙")
+            if hasattr(self, 'update_button'):
+                self.update_button.setStyleSheet("""
+                    QToolButton {
+                        color: #39FF14;
+                        font-weight: bold;
+                    }
+                """)
             set_dark_palette(app)
             self._is_dark_mode = True
         else:
             # turn on light mode 
             self.dark_mode_button.setText("🌞")
+            if hasattr(self, 'update_button'):
+                self.update_button.setStyleSheet("""
+                    QToolButton {
+                        color: #2E7D32;
+                        font-weight: bold;
+                    }
+                """)
             set_light_palette(app)
             self._is_dark_mode = False
 
@@ -739,9 +884,23 @@ class MainApp(QMainWindow):
             if checked:
                 set_dark_palette(app)
                 self._is_dark_mode = True
+                if hasattr(self, 'update_button'):
+                    self.update_button.setStyleSheet("""
+                        QToolButton {
+                            color: #39FF14;
+                            font-weight: bold;
+                        }
+                    """)
             else:
                 set_light_palette(app)
                 self._is_dark_mode = False
+                if hasattr(self, 'update_button'):
+                    self.update_button.setStyleSheet("""
+                        QToolButton {
+                            color: #2E7D32;
+                            font-weight: bold;
+                        }
+                    """)
         except Exception as e:
             print(f"Error loading dark mode: {e}")
 
