@@ -59,3 +59,11 @@ coll = COLLECT(
     upx_exclude=[],
     name="Display X Studio",
 )
+
+if sys.platform == "darwin":
+    app = BUNDLE(
+        coll,
+        name="Display X Studio.app",
+        icon=None,
+        bundle_identifier="com.tvnt04.displayxstudio",
+    )
