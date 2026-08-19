@@ -1,0 +1,8 @@
+Package: display-x-studio
+Version: 1.3.6
+Section: graphics
+Priority: optional
+Architecture: amd64
+Maintainer: TVNT04
+Description: Display X Studio
+ Multispectral display and analysis application.
