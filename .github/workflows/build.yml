@@ -130,6 +130,11 @@ jobs:
           ./appimagetool \
             AppDir \
             "${{ matrix.artifact }}.AppImage"
+      - name: Build Debian package
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          python packaging/build_deb.py
 
       # -------------------------
       # Windows
@@ -181,7 +186,10 @@ jobs:
           elif [[ "$RUNNER_OS" == "macOS" ]]; then
             shasum -a 256 "${{ matrix.artifact }}.dmg" > "${{ matrix.artifact }}.sha256"
           else
-            sha256sum "${{ matrix.artifact }}.AppImage" > "${{ matrix.artifact }}.sha256"
+            sha256sum \
+              "${{ matrix.artifact }}.AppImage" \
+              ./*.deb \
+              > "${{ matrix.artifact }}.sha256"
           fi
 
       # -------------------------
@@ -194,6 +202,7 @@ jobs:
           name: ${{ matrix.artifact }}
           path: |
             *.AppImage
+            *.deb
             *.zip
             *.dmg
             *.sha256
