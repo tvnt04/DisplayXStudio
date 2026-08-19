@@ -62,6 +62,7 @@ jobs:
             --windowed \
             --name "Display X Studio" \
             --add-data "logo.png:." \
+            --add-data "logo_icon.png:." \
             main.py
 
       # -------------------------
@@ -104,10 +105,10 @@ jobs:
           mkdir -p \
             AppDir/usr/share/icons/hicolor/256x256/apps
 
-          cp logo.png \
+          cp logo_icon.png \
             AppDir/usr/share/icons/hicolor/256x256/apps/display-x-studio.png
 
-          cp logo.png AppDir/display-x-studio.png
+          cp logo_icon.png AppDir/display-x-studio.png
 
           cat > AppDir/Display\ X\ Studio.desktop <<'EOF'
           [Desktop Entry]

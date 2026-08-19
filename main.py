@@ -5,7 +5,7 @@ from PyQt5.QtWidgets import (
     QFrame
 )
 from PyQt5.QtCore import Qt, QTimer, QCoreApplication, QThread, QObject, QEvent, QPoint, qInstallMessageHandler, pyqtSignal
-from PyQt5.QtGui import QPalette, QColor, QTransform, QKeySequence, QCloseEvent, QCursor, QHelpEvent
+from PyQt5.QtGui import QPalette, QColor, QTransform, QKeySequence, QCloseEvent, QCursor, QHelpEvent, QIcon
 from types import SimpleNamespace
 import sys
 import time
@@ -2055,6 +2055,11 @@ if __name__ == "__main__":
     install_toast_message_box_hook()
     qInstallMessageHandler(_qt_message_handler)
     app = QApplication(sys.argv)
+    base_dir = Path(__file__).resolve().parent
+    icon_path = base_dir / "logo_icon.png"
+
+    if icon_path.is_file():
+        app.setWindowIcon(QIcon(str(icon_path)))
     
     import os, json
     from app_paths import get_app_data_path, migrate_legacy_file
