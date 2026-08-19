@@ -8,11 +8,21 @@ from pathlib import Path
 
 
 def get_current_appimage_path() -> Path:
-    """Return the AppImage currently running this application."""
+    """Return the original AppImage file currently running this application."""
 
     if sys.platform != "linux":
         raise RuntimeError("AppImage updates are only supported on Linux.")
 
+    # AppImage sets APPIMAGE to the original .AppImage file.
+    appimage = os.environ.get("APPIMAGE")
+
+    if appimage:
+        path = Path(appimage).resolve()
+
+        if path.is_file() and path.suffix.lower() == ".appimage":
+            return path
+
+    # Fallback for environments where APPIMAGE is not available.
     try:
         path = Path(os.readlink("/proc/self/exe")).resolve()
     except (OSError, RuntimeError) as exc:
