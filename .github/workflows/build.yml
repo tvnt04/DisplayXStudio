@@ -47,9 +47,17 @@ jobs:
 
       - name: Install Linux dependencies
         if: matrix.platform == 'linux'
+        shell: bash
         run: |
-          sudo apt-get update
+          sudo sed -i \
+            's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
+            /etc/apt/sources.list
+
+          sudo apt-get update \
+            -o Acquire::Retries=5
+
           sudo apt-get install -y \
+            -o Acquire::Retries=5 \
             libgl1 \
             libglib2.0-0 \
             libxkbcommon-x11-0 \
