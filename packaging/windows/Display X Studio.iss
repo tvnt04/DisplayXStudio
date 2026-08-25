@@ -1,5 +1,5 @@
 #define MyAppName "Display X Studio"
-#define MyAppVersion "1.3.7"
+#define MyAppVersion "1.3.9"
 #define MyAppPublisher "TVNT04"
 #define MyAppExeName "Display X Studio.exe"
 #define MyAppId "{{D7A9F6E8-6D3B-4E5A-9B31-2A7C8F4D6E10}"
