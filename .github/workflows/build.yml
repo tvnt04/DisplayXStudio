@@ -175,7 +175,9 @@ jobs:
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
             "packaging\windows\Display X Studio.iss"
 
-          if (-not (Test-Path "Display-X-Studio-1.3.7-Setup.exe")) {
+          $installer = Get-ChildItem -Path . -Filter "Display-X-Studio-*-Setup.exe" | Select-Object -First 1
+
+          if ($null -eq $installer) {
             throw "Inno Setup did not produce the installer."
           }
 
