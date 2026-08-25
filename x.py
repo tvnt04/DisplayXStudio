@@ -118,12 +118,10 @@ _C_GLOW          = QColor(210, 225, 255)   # the one permitted accent, glow-only
 class SpaceStudioIntro(QWidget):
     """Frameless, full-screen space-themed intro animation widget."""
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
 
-        self.setWindowFlags(
-            Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
-        )
+        self.setWindowFlags(Qt.FramelessWindowHint)
         self.setStyleSheet("background-color: black;")
 
         self._progress: float = 0.0
@@ -161,14 +159,14 @@ class SpaceStudioIntro(QWidget):
     # ------------------------------------------------------------------
 
     def start(self) -> None:
-        """Resize to the primary screen, show, and begin the animation."""
-        screen = QApplication.primaryScreen()
-        if screen:
-            self.setGeometry(screen.geometry())
+        """Show the intro over the parent application window."""
+
+        if self.parentWidget() is not None:
+            self.setGeometry(self.parentWidget().rect())
+            self.parentWidget().installEventFilter(self)
 
         self.show()
         self.raise_()
-        self.activateWindow()
         self._anim.start()
 
     def mousePressEvent(self, event) -> None:
@@ -180,6 +178,13 @@ class SpaceStudioIntro(QWidget):
         if self._anim.state() == QPropertyAnimation.Running:
             self._anim.stop()
             self._on_finished()
+
+    def eventFilter(self, obj, event) -> bool:
+        from PyQt5.QtCore import QEvent
+        if self.parentWidget() is not None and obj == self.parentWidget():
+            if event.type() == QEvent.Resize:
+                self.setGeometry(self.parentWidget().rect())
+        return super().eventFilter(obj, event)
 
     # ------------------------------------------------------------------
     # Internal helpers

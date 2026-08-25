@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Display X Studio
+Comment=Display X Studio
+Exec=display-x-studio
+Icon=display-x-studio
+Categories=Graphics;
+Terminal=false
+StartupWMClass=Display X Studio

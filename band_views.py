@@ -82,14 +82,14 @@ class IndividualBandWorker(QThread):
                 bytes_per_frame = int(w) * int(h) * 2 * 3
                 estimated_bytes = bytes_per_frame * num_frames
                 safe_limit = int(psutil.virtual_memory().available * 0.30)
-                
+
                 step = 1
                 if safe_limit > 0 and estimated_bytes > safe_limit:
                     step = max(2, (estimated_bytes + safe_limit - 1) // safe_limit)
-                
+
                 frame_indices = list(range(self.start_frame, self.end_frame + 1))[::step]
                 num_frames_to_load = len(frame_indices)
-                
+
                 parts_display = []
                 parts_raw = []
                 parts_raw_unscaled = []
@@ -222,14 +222,14 @@ class MergedBandWorker(QThread):
                 bytes_per_frame = int(w) * int(h) * 2 * 3
                 estimated_bytes = bytes_per_frame * num_frames
                 safe_limit = int(psutil.virtual_memory().available * 0.30)
-                
+
                 step = 1
                 if safe_limit > 0 and estimated_bytes > safe_limit:
                     step = max(2, (estimated_bytes + safe_limit - 1) // safe_limit)
-                
+
                 frame_indices = list(range(self.start_frame, self.end_frame + 1))[::step]
                 num_frames_to_load = len(frame_indices)
-                
+
                 parts_display = []
                 parts_raw = []
                 parts_raw_unscaled = []
@@ -372,14 +372,14 @@ class PanBandWorker(QThread):
                 bytes_per_frame = int(w) * int(h) * 2 * 3
                 estimated_bytes = bytes_per_frame * num_frames
                 safe_limit = int(psutil.virtual_memory().available * 0.30)
-                
+
                 step = 1
                 if safe_limit > 0 and estimated_bytes > safe_limit:
                     step = max(2, (estimated_bytes + safe_limit - 1) // safe_limit)
-                
+
                 frame_indices = list(range(self.start_frame, self.end_frame + 1))[::step]
                 num_frames_to_load = len(frame_indices)
-                
+
                 parts_display = []
                 parts_raw = []
                 for i_idx, i in enumerate(frame_indices):
@@ -434,7 +434,7 @@ class PanBandWorker(QThread):
         except Exception as e:
             self.error.emit(str(e))
 
-class BandViewsMixin:     
+class BandViewsMixin:
     def _stop_thread(self, worker, wait_ms=1500):
         if worker is None:
             return
@@ -862,14 +862,14 @@ class BandViewsMixin:
     def apply_contrast_enhancement(self, frame):
         if not self.contrast_enhance_var.isChecked():
             return frame
-        
+
         min_val = self.histogram_viewer.min_val
         max_val = self.histogram_viewer.max_val
-        
+
         if max_val <= min_val:
             min_val = float(np.min(frame))
             max_val = float(np.max(frame))
-        
+
         if self.contrast_min_var.value() != 0.0:
             min_val = self.contrast_min_var.value()
         try:
@@ -878,10 +878,10 @@ class BandViewsMixin:
             default_max = 255.0
         if self.contrast_max_var.value() != default_max:
             max_val = self.contrast_max_var.value()
-        
+
         if max_val == min_val:
             return frame
-        
+
         enhanced = ((frame.astype(np.float32) - min_val) / (max_val - min_val) * 255)
         return np.clip(enhanced, 0, 255).astype(np.uint8)
 
@@ -999,7 +999,7 @@ class BandViewsMixin:
     def update_views(self, full_refresh=False):
         current_tab = self.view_tabs.currentIndex()
         tab_name = self.view_tabs.tabText(current_tab) if current_tab >= 0 else ""
-        
+
         # During playback, refresh only visible tab minimally (skip heavy ops)
         if self.playback_mode and not full_refresh:
             print("Optimized playback update: Refreshing only visible tab...")
@@ -1016,20 +1016,12 @@ class BandViewsMixin:
                     if current_i >= 0:
                         widget = self.individual_bands_notebook.widget(current_i)
                         if widget and hasattr(widget, 'key'):
-                            key = widget.key
-                            # Assume get_frame_for_band exists; else adapt
-                            frame = self.get_frame_for_band(key, self.current_frame_index) if hasattr(self, 'get_frame_for_band') else None
-                            if frame is not None:
-                                pil = Image.fromarray(frame)
-                                viewer = widget.findChild(GraphicsImageViewer)
-                                if viewer:
-                                    viewer.show_image(pil, fit_to_screen=False)
+                            self._quick_single_individual(widget)
             elif "RGB Fusion" in tab_name:
-                # Quick RGB: Single frame only, no multi-frame
-                self._quick_single_rgb()  # Add this helper below
+                self.preview_rgb_fusion()
             # Skip histogram during playback
             return  # Early exit
-        
+
         # Full update mode (non-playback or explicit refresh) - existing logic
         if "All Bands" in tab_name:
             self.update_all_bands_view()
@@ -1037,34 +1029,53 @@ class BandViewsMixin:
             self.update_individual_bands_view()
         if "RGB Fusion" in tab_name:
             self.preview_rgb_fusion()
-        
+
         # Update histogram only if visible or full refresh (existing)
         if full_refresh or "Histogram" in tab_name:
             self.update_histogram_view()
 
-    def _quick_single_rgb(self):
-        if not self.band_frames:
+    def _quick_single_individual(self, widget):
+        key = widget.key
+        viewer = widget.findChild(GraphicsImageViewer)
+        if not viewer or not self.band_frames:
             return
-        # Simplified: Single frame RGB stack (adapt bands from your rgb_bands dict)
-        keys = list(self.band_frames.keys())
-        frames = self.band_frames.get(keys[0]) if keys else None
-        if frames is None or self.current_frame_index >= len(frames):
-            return
-        h, w = frames.h, frames.w if hasattr(frames, 'h') else (frames[0].shape[0], frames[0].shape[1])
-        rgb_display = []
-        for channel in ["R", "G", "B"]:  # Assuming self.rgb_bands exists
-            band_key = getattr(self, 'rgb_bands', {}).get(channel, keys[0] if keys else None)
-            if band_key in self.band_frames and self.current_frame_index < len(self.band_frames[band_key]):
-                frame = self.band_frames[band_key][self.current_frame_index]
-                # Skip contrast/offset for speed
-                rgb_display.append(frame)
+
+        enhance = self.contrast_enhance_var.isChecked()
+        idx = self.current_frame_index
+
+        try:
+            if key == 'pan':
+                # Simplified pan logic for playback - just take the first unbinned band
+                base_keys = sorted(set(k.rsplit('_', 1)[0] for k in getattr(widget, 'unbinned_keys', [])))
+                if not base_keys:
+                    return
+                base = base_keys[0]
+                left = f"{base}_left"
+                right = f"{base}_right"
+                if left in self.band_frames and right in self.band_frames and idx < len(self.band_frames[left]) and idx < len(self.band_frames[right]):
+                    f_l = self.band_frames[left][idx]
+                    f_r = self.band_frames[right][idx]
+                    merged = np.hstack([f_l, f_r])
+                    display_frame = self.apply_contrast_enhancement(merged) if enhance else merged.copy()
+                    viewer.show_image(Image.fromarray(display_frame), fit_to_screen=False)
+            elif key.endswith('_merged'):
+                base = key.rsplit('_', 1)[0]
+                left = f"{base}_left"
+                right = f"{base}_right"
+                if left in self.band_frames and right in self.band_frames and idx < len(self.band_frames[left]) and idx < len(self.band_frames[right]):
+                    f_l = self.band_frames[left][idx]
+                    f_r = self.band_frames[right][idx]
+                    merged = np.hstack([f_l, f_r])
+                    display_frame = self.apply_contrast_enhancement(merged) if enhance else merged.copy()
+                    viewer.show_image(Image.fromarray(display_frame), fit_to_screen=False)
             else:
-                rgb_display.append(np.zeros((h, w), dtype=np.uint8))
-        if len(rgb_display) == 3:
-            rgb_array = np.stack(rgb_display, axis=-1)
-            pil = Image.fromarray(rgb_array)
-            self.rgb_preview_viewer.show_image(pil, fit_to_screen=False)
-        
+                if key in self.band_frames and idx < len(self.band_frames[key]):
+                    frame = self.band_frames[key][idx]
+                    display_frame = self.apply_contrast_enhancement(frame) if enhance else frame.copy()
+                    viewer.show_image(Image.fromarray(display_frame), fit_to_screen=False)
+        except Exception as e:
+            print(f"Error in optimized individual playback: {e}")
+
     def update_all_bands_view(self):
         if not self.band_frames:
             _safe_show_image(getattr(self, 'all_bands_viewer', None), None)
@@ -1457,7 +1468,7 @@ class BandViewsMixin:
         tab_idx = self.individual_bands_notebook.indexOf(widget)
         if hasattr(widget, 'original_tab_text'):
             self.individual_bands_notebook.setTabText(tab_idx, widget.original_tab_text)
-        
+
         del images  # Free worker data
         gc.collect()
 
@@ -1518,7 +1529,7 @@ class BandViewsMixin:
         tab_idx = self.individual_bands_notebook.indexOf(widget)
         if hasattr(widget, 'original_tab_text'):
             self.individual_bands_notebook.setTabText(tab_idx, widget.original_tab_text)
-        
+
         del images  # Free worker data
         gc.collect()
 
@@ -1883,7 +1894,7 @@ class BandViewsMixin:
     def update_histogram_view(self):
         if not self.band_frames:
             return
-        
+
         keys = sorted(self.band_frames.keys())
         frames = self.band_frames.get(keys[0]) if keys else None
         if frames is None or self.current_frame_index >= len(frames):
@@ -1917,7 +1928,7 @@ class BandViewsMixin:
         if frames is None or self.current_frame_index >= len(frames):
             self.current_frame_index = 0
 
-        rgb_mode = "Single" if self.rgb_frame_mode_single.isChecked() else "All"
+        rgb_mode = "Single" if (self.rgb_frame_mode_single.isChecked() or getattr(self, 'playback_mode', False)) else "All"
         enhance = self.contrast_enhance_var.isChecked()
 
         offset_r_x = self.rgb_offset_r_x.value()

@@ -1,14 +1,25 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 from pathlib import Path
+import sys
 
 PROJECT_ROOT = Path(SPECPATH).resolve().parent
+
+datas = [
+    (str(PROJECT_ROOT / "logo.png"), "."),
+    (str(PROJECT_ROOT / "logo_icon.png"), "."),
+]
+
+icon = None
+
+if sys.platform == "win32":
+    icon = str(PROJECT_ROOT / "logo.ico")
 
 a = Analysis(
     [str(PROJECT_ROOT / "main.py")],
     pathex=[str(PROJECT_ROOT)],
     binaries=[],
-    datas=[],
+    datas=datas,
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -36,6 +47,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=icon,
 )
 
 coll = COLLECT(
@@ -47,3 +59,11 @@ coll = COLLECT(
     upx_exclude=[],
     name="Display X Studio",
 )
+
+if sys.platform == "darwin":
+    app = BUNDLE(
+        coll,
+        name="Display X Studio.app",
+        icon=None,
+        bundle_identifier="com.tvnt04.displayxstudio",
+    )

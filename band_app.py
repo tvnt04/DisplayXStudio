@@ -10,6 +10,7 @@ import hashlib
 import psutil
 import time
 import gc
+import platform
 import re
 import os
 import numpy as np
@@ -1128,8 +1129,12 @@ class BandStitchProApp(BandViewsMixin, QWidget):
         left_layout.setSpacing(4)
         self.left_panel.setLayout(left_layout)
         self.left_scroll.setWidget(self.left_panel)
-        self.left_scroll.setMinimumWidth(420)
-        self.left_scroll.setMaximumWidth(560)
+        if platform.system() == "Windows":
+            self.left_scroll.setMinimumWidth(460)
+            self.left_scroll.setMaximumWidth(560)
+        else:
+            self.left_scroll.setMinimumWidth(420)
+            self.left_scroll.setMaximumWidth(560)
         self.left_scroll.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         main_layout.addWidget(self.left_scroll)
         views_container = QWidget()
@@ -1501,10 +1506,6 @@ class BandStitchProApp(BandViewsMixin, QWidget):
     def apply_primary_monitor_control_width(self, width=None):
         try:
             if width is None:
-                for widget in (getattr(self, "terminal_panel", None), getattr(self, "progress_container", None)):
-                    if widget is not None:
-                        widget.setMinimumWidth(0)
-                        widget.setMaximumWidth(16777215)
                 viewers = []
                 for name in ("all_bands_viewer", "rgb_preview_viewer"):
                     viewer = getattr(self, name, None)
@@ -1524,10 +1525,6 @@ class BandStitchProApp(BandViewsMixin, QWidget):
                 return
 
             safe_width = max(320, int(width) - 24)
-            for widget in (getattr(self, "terminal_panel", None), getattr(self, "progress_container", None)):
-                if widget is not None:
-                    widget.setMinimumWidth(0)
-                    widget.setMaximumWidth(safe_width)
             viewers = []
             for name in ("all_bands_viewer", "rgb_preview_viewer"):
                 viewer = getattr(self, name, None)
@@ -3020,7 +3017,13 @@ class BandStitchProApp(BandViewsMixin, QWidget):
         for key in keys:
             frames = self.band_frames.get(key)
             if frames and self.current_frame_index < len(frames):
-                frame = frames[self.current_frame_index]
+                try:
+                    if hasattr(frames, 'get_raw'):
+                        frame = frames.get_raw(self.current_frame_index)
+                    else:
+                        frame = frames[self.current_frame_index]
+                except Exception:
+                    frame = frames[self.current_frame_index]
                 min_val = min(min_val, float(np.min(frame)))
                 max_val = max(max_val, float(np.max(frame)))
         if min_val == float('inf') or max_val == float('-inf'):
