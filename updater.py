@@ -1,19 +1,16 @@
-"""Display X Studio update checker.
-
-Checks the latest public GitHub Release and identifies the appropriate
-download asset for the current platform.
-
-Installation is intentionally handled separately per platform.
-"""
+"""Display X Studio update checker and installation detection."""
 
 from __future__ import annotations
-import os
-import tempfile
-from pathlib import Path
+
 import json
+import os
 import platform
 import re
+import subprocess
+import sys
+import tempfile
 from dataclasses import dataclass
+from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -38,6 +35,7 @@ class UpdateInfo:
     release_url: str
     asset_name: str | None
     asset_url: str | None
+    installation_type: str
 
     @property
     def update_available(self) -> bool:
@@ -47,7 +45,6 @@ class UpdateInfo:
 
 
 def _version_key(version: str) -> tuple[int, ...]:
-    """Convert v1.3.0 / 1.3.0 into comparable integer tuples."""
     value = str(version).strip().lstrip("vV")
 
     match = re.match(
@@ -66,80 +63,207 @@ def _version_key(version: str) -> tuple[int, ...]:
     )
 
 
-def _platform_asset_suffix() -> str:
+def _running_executable() -> Path | None:
+    try:
+        if platform.system() == "Linux":
+            return Path(
+                os.readlink("/proc/self/exe")
+            ).resolve()
+
+        return Path(sys.executable).resolve()
+
+    except (OSError, RuntimeError):
+        return None
+
+
+def _is_deb_install(executable: Path | None) -> bool:
+    if executable is None:
+        return False
+
+    try:
+        result = subprocess.run(
+            [
+                "dpkg-query",
+                "-S",
+                str(executable),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+
+        return (
+            result.returncode == 0
+            and "display-x-studio" in result.stdout.lower()
+        )
+
+    except (
+        OSError,
+        subprocess.SubprocessError,
+    ):
+        return False
+
+
+def _is_rpm_install(executable: Path | None) -> bool:
+    if executable is None:
+        return False
+
+    try:
+        result = subprocess.run(
+            [
+                "rpm",
+                "-qf",
+                str(executable),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+
+        return (
+            result.returncode == 0
+            and "display-x-studio" in result.stdout.lower()
+        )
+
+    except (
+        OSError,
+        subprocess.SubprocessError,
+    ):
+        return False
+
+
+def detect_installation_type() -> str:
+    """Detect how the running application was installed."""
+
     system = platform.system()
-    machine = platform.machine().lower()
+    executable = _running_executable()
 
     if system == "Linux":
-        if machine in {"x86_64", "amd64"}:
-            return "linux-x86_64"
-        return f"linux-{machine}"
+        appimage = os.environ.get("APPIMAGE")
+
+        if appimage:
+            appimage_path = Path(appimage).resolve()
+
+            if (
+                appimage_path.is_file()
+                and appimage_path.suffix.lower() == ".appimage"
+            ):
+                return "linux-appimage"
+
+        if _is_deb_install(executable):
+            return "linux-deb"
+
+        if _is_rpm_install(executable):
+            return "linux-rpm"
+
+        return "unsupported"
 
     if system == "Windows":
-        if machine in {"x86_64", "amd64"}:
-            return "windows-x86_64"
-        return f"windows-{machine}"
+        if executable:
+            install_dir = executable.parent
+
+            if any(
+                install_dir.glob("unins*.exe")
+            ):
+                return "windows-installer"
+
+            if "program files" in str(
+                install_dir
+            ).lower():
+                return "windows-installer"
+
+        return "windows-portable"
 
     if system == "Darwin":
-        if machine in {"arm64", "aarch64"}:
-            return "macos-arm64"
+        if executable:
+            for parent in executable.parents:
+                if parent.suffix.lower() == ".app":
+                    return "macos-dmg"
 
-        if machine in {"x86_64", "amd64"}:
-            return "macos-x86_64"
+        return "unsupported"
 
-        return f"macos-{machine}"
-
-    return f"{system.lower()}-{machine}"
+    return "unsupported"
 
 
-def _find_asset(release: dict) -> tuple[str | None, str | None]:
-    system = platform.system()
-    machine = platform.machine().lower()
+def _asset_matches(
+    name: str,
+    installation_type: str,
+) -> bool:
+    lower = name.lower()
 
-    assets = release.get("assets") or []
+    if installation_type == "linux-appimage":
+        return (
+            lower.endswith(".appimage")
+            and (
+                "linux-x86_64" in lower
+                or "linux-amd64" in lower
+            )
+        )
 
-    if system == "Linux":
-        extensions = (".AppImage",)
-        machine_names = {"x86_64", "amd64"}
-    elif system == "Windows":
-        extensions = (".zip", ".exe")
-        machine_names = {"x86_64", "amd64"}
-    elif system == "Darwin":
-        extensions = (".dmg", ".zip")
-        machine_names = {
-            "x86_64",
-            "amd64",
-            "arm64",
-            "aarch64",
-        }
-    else:
-        return None, None
+    if installation_type == "linux-deb":
+        return (
+            lower.endswith(".deb")
+            and (
+                "amd64" in lower
+                or "x86_64" in lower
+            )
+        )
 
-    for asset in assets:
-        name = str(asset.get("name", ""))
-        lower_name = name.lower()
+    if installation_type == "linux-rpm":
+        return (
+            lower.endswith(".rpm")
+            and (
+                "x86_64" in lower
+                or "amd64" in lower
+            )
+        )
 
-        if not any(
-            lower_name.endswith(ext.lower())
-            for ext in extensions
+    if installation_type == "windows-installer":
+        return (
+            lower.endswith(".exe")
+            and "setup" in lower
+        )
+
+    if installation_type == "windows-portable":
+        return (
+            lower.endswith(".zip")
+            and "windows-x86_64" in lower
+        )
+
+    if installation_type == "macos-dmg":
+        return (
+            lower.endswith(".dmg")
+            and (
+                "macos-arm64" in lower
+                or "macos-x86_64" in lower
+            )
+        )
+
+    return False
+
+
+def _find_asset(
+    release: dict,
+    installation_type: str,
+) -> tuple[str | None, str | None]:
+
+    for asset in release.get("assets") or []:
+        name = str(
+            asset.get("name", "")
+        )
+
+        if _asset_matches(
+            name,
+            installation_type,
         ):
-            continue
-
-        # Current release naming:
-        # Display-X-Studio-1.3.0-x86_64.AppImage
-        if machine in {"x86_64", "amd64"}:
-            if "x86_64" in lower_name or "amd64" in lower_name:
-                return (
-                    asset.get("name"),
-                    asset.get("browser_download_url"),
-                )
-
-        elif machine in {"arm64", "aarch64"}:
-            if "arm64" in lower_name or "aarch64" in lower_name:
-                return (
-                    asset.get("name"),
-                    asset.get("browser_download_url"),
-                )
+            return (
+                asset.get("name"),
+                asset.get(
+                    "browser_download_url"
+                ),
+            )
 
     return None, None
 
@@ -152,8 +276,10 @@ def check_for_update(
     request = Request(
         RELEASES_API_URL,
         headers={
-            "Accept": "application/vnd.github+json",
-            "User-Agent": "Display-X-Studio-Updater",
+            "Accept":
+                "application/vnd.github+json",
+            "User-Agent":
+                "Display-X-Studio-Updater",
         },
     )
 
@@ -189,33 +315,45 @@ def check_for_update(
             "Latest GitHub Release has no tag_name"
         )
 
-    latest_version = str(tag_name).lstrip("vV")
+    latest_version = str(
+        tag_name
+    ).lstrip("vV")
 
-    try:
-        _version_key(APP_VERSION)
-        _version_key(latest_version)
+    _version_key(APP_VERSION)
+    _version_key(latest_version)
 
-    except ValueError as exc:
-        raise RuntimeError(str(exc)) from exc
+    installation_type = (
+        detect_installation_type()
+    )
 
-    asset_name, asset_url = _find_asset(release)
+    asset_name, asset_url = _find_asset(
+        release,
+        installation_type,
+    )
 
     return UpdateInfo(
         current_version=APP_VERSION,
         latest_version=latest_version,
-        release_url=release.get("html_url") or "",
+        release_url=release.get(
+            "html_url"
+        ) or "",
         asset_name=asset_name,
         asset_url=asset_url,
+        installation_type=installation_type,
     )
+
 
 def download_update(
     update: UpdateInfo,
     destination: str | Path | None = None,
     timeout: int = 60,
 ) -> Path:
-    """Download the selected update asset to a local file."""
+    """Download the selected update asset."""
 
-    if not update.asset_url or not update.asset_name:
+    if (
+        not update.asset_url
+        or not update.asset_name
+    ):
         raise RuntimeError(
             "No compatible update asset is available."
         )
@@ -226,7 +364,9 @@ def download_update(
             / update.asset_name
         )
     else:
-        destination = Path(destination)
+        destination = Path(
+            destination
+        )
 
     destination.parent.mkdir(
         parents=True,
@@ -236,8 +376,10 @@ def download_update(
     request = Request(
         update.asset_url,
         headers={
-            "User-Agent": "Display-X-Studio-Updater",
-            "Accept": "application/octet-stream",
+            "User-Agent":
+                "Display-X-Studio-Updater",
+            "Accept":
+                "application/octet-stream",
         },
     )
 
@@ -250,16 +392,25 @@ def download_update(
             request,
             timeout=timeout,
         ) as response:
-            with open(temporary, "wb") as output:
+            with open(
+                temporary,
+                "wb",
+            ) as output:
+
                 while True:
-                    chunk = response.read(1024 * 1024)
+                    chunk = response.read(
+                        1024 * 1024
+                    )
 
                     if not chunk:
                         break
 
                     output.write(chunk)
 
-        os.replace(temporary, destination)
+        os.replace(
+            temporary,
+            destination,
+        )
 
     except (
         HTTPError,
@@ -267,8 +418,11 @@ def download_update(
         TimeoutError,
         OSError,
     ) as exc:
+
         try:
-            temporary.unlink(missing_ok=True)
+            temporary.unlink(
+                missing_ok=True
+            )
         except OSError:
             pass
 
@@ -277,4 +431,3 @@ def download_update(
         ) from exc
 
     return destination
-
