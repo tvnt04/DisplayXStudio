@@ -707,7 +707,22 @@ class MainApp(QMainWindow):
         system = platform.system()
 
         if system == "Linux":
-            self._install_appimage_update(downloaded_path)
+            installation_type = getattr(
+                self.update_info,
+                "installation_type",
+                "unsupported",
+            )
+
+            if installation_type == "linux-appimage":
+                self._install_appimage_update(downloaded_path)
+            elif installation_type == "linux-deb":
+                self._install_deb_update(downloaded_path)
+            elif installation_type == "linux-rpm":
+                self._install_rpm_update(downloaded_path)
+            else:
+                raise RuntimeError(
+                    f"Unsupported Linux installation type: {installation_type}"
+                )
 
         elif system == "Windows":
             self._install_windows_update(downloaded_path)
@@ -718,6 +733,50 @@ class MainApp(QMainWindow):
         else:
             raise RuntimeError(f"Unsupported OS for update: {system}")
 
+
+    def _install_deb_update(self, downloaded_path: Path) -> None:
+        """Install a downloaded Debian package."""
+        downloaded = Path(downloaded_path).resolve()
+
+        if downloaded.suffix.lower() != ".deb":
+            raise RuntimeError(
+                f"Downloaded file is not a Debian package: {downloaded}"
+            )
+
+        result = subprocess.run(
+            ["pkexec", "dpkg", "-i", str(downloaded)],
+            check=False,
+        )
+
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"Debian package installation failed (exit code {result.returncode})."
+            )
+
+        self._app_is_closing = True
+        QApplication.quit()
+
+    def _install_rpm_update(self, downloaded_path: Path) -> None:
+        """Install a downloaded RPM package."""
+        downloaded = Path(downloaded_path).resolve()
+
+        if downloaded.suffix.lower() != ".rpm":
+            raise RuntimeError(
+                f"Downloaded file is not an RPM package: {downloaded}"
+            )
+
+        result = subprocess.run(
+            ["pkexec", "rpm", "-U", str(downloaded)],
+            check=False,
+        )
+
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"RPM package installation failed (exit code {result.returncode})."
+            )
+
+        self._app_is_closing = True
+        QApplication.quit()
 
     def _install_appimage_update(self, downloaded_path: Path) -> None:
         """Install a downloaded Linux AppImage update."""
