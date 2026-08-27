@@ -733,7 +733,6 @@ class MainApp(QMainWindow):
         else:
             raise RuntimeError(f"Unsupported OS for update: {system}")
 
-
     def _install_deb_update(self, downloaded_path: Path) -> None:
         """Install a downloaded Debian package."""
         downloaded = Path(downloaded_path).resolve()
@@ -741,20 +740,21 @@ class MainApp(QMainWindow):
         if downloaded.suffix.lower() != ".deb":
             raise RuntimeError(
                 f"Downloaded file is not a Debian package: {downloaded}"
-            )
-
-        result = subprocess.run(
-            ["pkexec", "dpkg", "-i", str(downloaded)],
-            check=False,
         )
 
-        if result.returncode != 0:
-            raise RuntimeError(
-                f"Debian package installation failed (exit code {result.returncode})."
-            )
+    try:
+        subprocess.Popen(
+            ["pkexec", "dpkg", "-i", str(downloaded)],
+            start_new_session=True,
+        )
+    except OSError as exc:
+        raise RuntimeError(
+            f"Could not launch Debian package installer: {exc}"
+        ) from exc
 
-        self._app_is_closing = True
-        QApplication.quit()
+    # Let pkexec/dpkg take over after this application exits.
+    self._app_is_closing = True
+    QApplication.quit()
 
     def _install_rpm_update(self, downloaded_path: Path) -> None:
         """Install a downloaded RPM package."""
