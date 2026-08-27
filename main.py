@@ -433,13 +433,13 @@ class UpdateDownloadWorker(QThread):
 
     def __init__(self, update_info, parent=None):
         super().__init__(parent)
-        self.update_info = update_info
+        self._update_info = update_info
 
     def run(self):
         try:
             from updater import download_update
 
-            path = download_update(self.update_info)
+            path = download_update(self._update_info)
             self.result_ready.emit(path)
 
         except Exception as e:
@@ -708,7 +708,7 @@ class MainApp(QMainWindow):
 
         if system == "Linux":
             installation_type = getattr(
-                self.update_info,
+                self._update_info,
                 "installation_type",
                 "unsupported",
             )
