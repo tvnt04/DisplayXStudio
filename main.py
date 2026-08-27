@@ -740,21 +740,21 @@ class MainApp(QMainWindow):
         if downloaded.suffix.lower() != ".deb":
             raise RuntimeError(
                 f"Downloaded file is not a Debian package: {downloaded}"
-        )
+            )
 
-    try:
-        subprocess.Popen(
+        result = subprocess.run(
             ["pkexec", "dpkg", "-i", str(downloaded)],
-            start_new_session=True,
+            check=False,
         )
-    except OSError as exc:
-        raise RuntimeError(
-            f"Could not launch Debian package installer: {exc}"
-        ) from exc
 
-    # Let pkexec/dpkg take over after this application exits.
-    self._app_is_closing = True
-    QApplication.quit()
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"Debian package installation failed "
+                f"(exit code {result.returncode})."
+            )
+
+        self._app_is_closing = True
+        QApplication.quit()
 
     def _install_rpm_update(self, downloaded_path: Path) -> None:
         """Install a downloaded RPM package."""
