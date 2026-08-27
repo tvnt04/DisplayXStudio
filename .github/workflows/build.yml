@@ -9,6 +9,11 @@ on:
       - 'v*'
   pull_request:
   workflow_dispatch:
+    inputs:
+      test_version:
+        description: 'Test package version (leave empty for normal build)'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -37,6 +42,13 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+
+      - name: Override version for test build
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.test_version != ''
+        shell: bash
+        run: |
+          sed -i "s/APP_VERSION = \".*\"/APP_VERSION = \"${{ github.event.inputs.test_version }}\"/" app_version.py
+          grep -n "APP_VERSION" app_version.py
 
       - name: Set up Python
         uses: actions/setup-python@v5
