@@ -706,13 +706,13 @@ class MainApp(QMainWindow):
         """
         system = platform.system()
 
-        if system == "Linux":
-            installation_type = getattr(
-                self._update_info,
-                "installation_type",
-                "unsupported",
-            )
+        installation_type = getattr(
+            self._update_info,
+            "installation_type",
+            "unsupported",
+        )
 
+        if system == "Linux":
             if installation_type == "linux-appimage":
                 self._install_appimage_update(downloaded_path)
             elif installation_type == "linux-deb":
@@ -725,10 +725,22 @@ class MainApp(QMainWindow):
                 )
 
         elif system == "Windows":
-            self._install_windows_update(downloaded_path)
+            if installation_type == "windows-installer":
+                self._install_windows_installer_update(downloaded_path)
+            elif installation_type == "windows-portable":
+                self._install_windows_portable_update(downloaded_path)
+            else:
+                raise RuntimeError(
+                    f"Unsupported Windows installation type: {installation_type}"
+                )
 
         elif system == "Darwin":
-            self._install_macos_update(downloaded_path)
+            if installation_type == "macos-dmg":
+                self._install_macos_dmg_update(downloaded_path)
+            else:
+                raise RuntimeError(
+                    f"Unsupported macOS installation type: {installation_type}"
+                )
 
         else:
             raise RuntimeError(f"Unsupported OS for update: {system}")
@@ -783,6 +795,24 @@ class MainApp(QMainWindow):
         from app_updater import install_appimage_update
 
         install_appimage_update(downloaded_path)
+
+    def _install_windows_portable_update(
+        self,
+        downloaded_path: Path,
+    ) -> None:
+        """Install a downloaded Windows portable ZIP update."""
+        from app_updater import install_windows_portable_update
+
+        install_windows_portable_update(downloaded_path)
+
+    def _install_macos_dmg_update(
+        self,
+        downloaded_path: Path,
+    ) -> None:
+        """Install a downloaded macOS DMG update."""
+        from app_updater import install_macos_dmg_update
+
+        install_macos_dmg_update(downloaded_path)
 
     def _read_json_file(self, path, default=None):
         if not os.path.exists(path):
