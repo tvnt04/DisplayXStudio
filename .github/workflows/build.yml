@@ -47,8 +47,27 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.test_version != ''
         shell: bash
         run: |
-          sed -i "s/APP_VERSION = \".*\"/APP_VERSION = \"${{ github.event.inputs.test_version }}\"/" app_version.py
+          python - <<'PY'
+          from pathlib import Path
+          import os
+          import re
+
+          path = Path("app_version.py")
+          version = os.environ["TEST_VERSION"]
+
+          text = path.read_text()
+          text = re.sub(
+              r'APP_VERSION\s*=\s*"[^"]*"',
+              f'APP_VERSION = "{version}"',
+              text,
+              count=1,
+          )
+          path.write_text(text)
+          PY
+
           grep -n "APP_VERSION" app_version.py
+        env:
+          TEST_VERSION: ${{ github.event.inputs.test_version }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
