@@ -278,6 +278,14 @@ jobs:
             *.sha256
           if-no-files-found: error
           retention-days: 14
+      - name: Upload Linux DEB test artifact
+        if: matrix.platform == 'linux' && github.event_name == 'workflow_dispatch' && github.event.inputs.test_version != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: Display-X-Studio-deb-test
+          path: ./*.deb
+          if-no-files-found: error
+          retention-days: 7
 
   # =====================================
   # Create GitHub Release for version tags
