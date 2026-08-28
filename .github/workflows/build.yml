@@ -203,14 +203,29 @@ jobs:
         if: matrix.platform == 'windows'
         shell: pwsh
         run: |
-          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
-            "packaging\windows\Display X Studio.iss"
+          $version = python -c "from app_version import APP_VERSION; print(APP_VERSION)"
+          Write-Host "Building Windows installer version $version"
 
-          $installer = Get-ChildItem -Path . -Filter "Display-X-Studio-*-Setup.exe" | Select-Object -First 1
+          $iss = "packaging\windows\Display X Studio.iss"
+          $content = Get-Content $iss -Raw
+
+          $content = $content -replace `
+            '#define MyAppVersion "[^"]*"', `
+            "#define MyAppVersion `"$version`""
+
+          Set-Content $iss $content -Encoding UTF8
+
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
+            $iss
+
+          $installer = Get-ChildItem -Path . -Filter "Display-X-Studio-*-Setup.exe" |
+            Select-Object -First 1
 
           if ($null -eq $installer) {
             throw "Inno Setup did not produce the installer."
           }
+
+          Write-Host "Created installer: $($installer.Name)"
 
       - name: Package Windows portable ZIP
         if: matrix.platform == 'windows'
