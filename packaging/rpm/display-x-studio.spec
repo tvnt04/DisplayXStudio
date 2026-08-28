@@ -7,7 +7,7 @@ License:        Proprietary
 URL:            https://github.com/tvnt04/DisplayXStudio
 
 BuildArch:      x86_64
-
+AutoReqProv:    no
 %description
 Display X Studio multispectral display and analysis application.
 
