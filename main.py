@@ -796,6 +796,15 @@ class MainApp(QMainWindow):
 
         install_appimage_update(downloaded_path)
 
+    def _install_windows_installer_update(
+        self,
+        downloaded_path: Path,
+    ) -> None:
+        """Install a downloaded Windows installer update."""
+        from app_updater import install_windows_installer_update
+
+        install_windows_installer_update(downloaded_path)
+
     def _install_windows_portable_update(
         self,
         downloaded_path: Path,
