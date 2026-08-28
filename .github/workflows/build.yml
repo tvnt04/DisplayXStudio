@@ -88,7 +88,7 @@ jobs:
         if: matrix.platform == 'windows'
         shell: pwsh
         run: |
-          python -c "from PIL import Image; src=Image.open('logo.png').convert('RGBA'); sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)]; images=[src.resize(size, Image.Resampling.LANCZOS) for size in sizes]; images[0].save('logo.ico', format='ICO', sizes=sizes)"
+          python -c "from PIL import Image; src=Image.open('logo.png').convert('RGBA'); src.save('logo.ico', format='ICO', sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])"
 
       - name: Build application
         shell: bash
