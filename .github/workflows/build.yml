@@ -5,6 +5,8 @@ on:
     branches:
       - main
       - 'feature/**'
+      - 'nuitka-1.4.0'
+      - 'nuitka-1.4.0'
     tags:
       - 'v*'
   pull_request:
