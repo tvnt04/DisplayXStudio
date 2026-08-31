@@ -56,7 +56,6 @@ def main() -> int:
         cmd += [
             "--macos-create-app-bundle",
             f"--macos-app-version={version}",
-            "--macos-bundle-identifier=com.tvnt04.displayxstudio",
         ]
 
     env = os.environ.copy()
