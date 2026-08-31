@@ -30,6 +30,7 @@ def main() -> int:
         raise SystemExit(f"Application entry point not found: {ENTRY}")
 
     dist = ROOT / "dist"
+
     if dist.exists():
         shutil.rmtree(dist)
 
@@ -65,6 +66,52 @@ def main() -> int:
     print(" ".join(cmd))
 
     subprocess.run(cmd, cwd=ROOT, env=env, check=True)
+
+    # Normalize Nuitka output to the directory/file names
+    # expected by the existing packaging pipeline.
+
+    if sys.platform == "win32":
+        source = dist / "main.dist"
+        target = dist / "Display X Studio"
+
+        if target.exists():
+            shutil.rmtree(target)
+
+        source.rename(target)
+
+        exe = target / "main.exe"
+        target_exe = target / "Display X Studio.exe"
+
+        if exe.exists():
+            exe.rename(target_exe)
+
+    elif sys.platform == "darwin":
+        source = dist / "main.app"
+        target = dist / "Display X Studio.app"
+
+        if target.exists():
+            shutil.rmtree(target)
+
+        source.rename(target)
+
+    else:
+        source = dist / "main.dist"
+        target = dist / "Display X Studio"
+
+        if target.exists():
+            shutil.rmtree(target)
+
+        source.rename(target)
+
+        exe = target / "main.bin"
+        target_exe = target / "Display X Studio"
+
+        if exe.exists():
+            exe.rename(target_exe)
+            target_exe.chmod(0o755)
+
+    print("Normalized Nuitka output:")
+    print(dist)
 
     return 0
 
