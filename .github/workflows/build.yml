@@ -252,7 +252,6 @@ jobs:
             sha256sum \
               "${{ matrix.artifact }}.AppImage" \
               ./*.deb \
-              ./*.rpm \
               > "${{ matrix.artifact }}.sha256"
           fi
 
