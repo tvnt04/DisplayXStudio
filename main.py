@@ -374,7 +374,7 @@ class SecondaryMonitorWindow(QMainWindow):
     def __init__(self, main_app):
         super().__init__(main_app)
         self.main_app = main_app
-        self.setWindowTitle(f"{APP_NAME} - Screen 2")
+        self.setWindowTitle(f"{APP_NAME} v{APP_VERSION} - Screen 2")
         self.resize(1280, 800)
 
         central = QWidget(self)
@@ -452,7 +452,7 @@ class MainApp(QMainWindow):
             get_app_data_path("last_session.json"),
             os.path.join(os.path.dirname(os.path.abspath(__file__)), "last_session.json")
         )
-        self.setWindowTitle(f"{APP_NAME}")
+        self.setWindowTitle(f"{APP_NAME} v{APP_VERSION}")
         self.resize(1280, 800)
 
         central_widget = QWidget()
