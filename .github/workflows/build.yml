@@ -87,10 +87,8 @@ jobs:
       - name: Build application
         shell: bash
         run: |
-          python -m PyInstaller \
-            --noconfirm \
-            --clean \
-            "packaging/Display X Studio.spec"
+          python -m pip install nuitka
+          python packaging/build_nuitka.py
 
       # -------------------------
       # Linux
@@ -283,89 +281,13 @@ jobs:
           retention-days: 7
 
   # =====================================
-  # RHEL 9-compatible RPM build
-  # =====================================
-
-  build-rhel-rpm:
-    name: Build (RHEL 9 RPM)
-    runs-on: ubuntu-22.04
-    container:
-      image: rockylinux:9
-
-    steps:
-      - name: Install system dependencies
-        shell: bash
-        run: |
-          dnf -y update
-          dnf -y install \
-            git \
-            python3.11 \
-            python3.11-pip \
-            rpm-build \
-            gcc \
-            gcc-c++ \
-            make \
-            mesa-libGL \
-            libX11 \
-            libXext \
-            libXrender \
-            libxcb \
-            libxkbcommon \
-            libxkbcommon-x11 \
-            zlib \
-            libjpeg-turbo \
-            libpng \
-            freetype \
-            openssl-devel \
-            libffi-devel
-
-      - name: Check out source
-        uses: actions/checkout@v4
-
-      - name: Set up Python dependencies
-        shell: bash
-        run: |
-          python3.11 -m pip install --upgrade pip
-          sed 's/^numpy$/numpy==1.26.4/' requirement.txt > /tmp/requirements-rhel.txt
-          python3.11 -m pip install -r /tmp/requirements-rhel.txt
-          python3.11 -m pip install pyinstaller
-
-      - name: Build application
-        shell: bash
-        run: |
-          python3.11 -m PyInstaller \
-            --noconfirm \
-            --clean \
-            "packaging/Display X Studio.spec"
-
-      - name: Verify Linux executable
-        shell: bash
-        run: |
-          test -x "dist/Display X Studio/Display X Studio"
-
-      - name: Build RPM
-        shell: bash
-        run: |
-          python3.11 packaging/build_rpm.py
-
-      - name: Upload RHEL RPM artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Display-X-Studio-rhel-x86_64
-          path: ./*.rpm
-          if-no-files-found: error
-          retention-days: 14
-
-  # =====================================
   # Create GitHub Release for version tags
   # =====================================
 
   release:
     name: Create GitHub Release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs:
-      - build
-      - build-rhel-rpm
+    needs: build
     runs-on: ubuntu-22.04
 
     steps:
@@ -373,12 +295,6 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: Display-X-Studio-linux-x86_64
-          path: release-assets
-
-      - name: Download RHEL RPM artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: Display-X-Studio-rhel-x86_64
           path: release-assets
 
       - name: Download Windows artifact
