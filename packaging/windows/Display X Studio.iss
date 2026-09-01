@@ -19,6 +19,8 @@ WizardStyle=modern
 ArchitecturesInstallIn64BitMode=x64
 UninstallDisplayName={#MyAppName}
 Uninstallable=yes
+CloseApplications=yes
+RestartApplications=no
 
 [Files]
 Source: "..\..\dist\Display X Studio\*"; DestDir: "{app}"; \

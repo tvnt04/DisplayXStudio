@@ -199,7 +199,7 @@ exit 0
 def install_windows_installer_update(
     downloaded_path: str | Path,
 ) -> None:
-    """Launch a downloaded Windows installer and exit the current app."""
+    """Launch the Windows installer after the current app has fully exited."""
 
     if platform.system() != "Windows":
         raise RuntimeError(
@@ -218,14 +218,78 @@ def install_windows_installer_update(
             f"Downloaded update is not a Windows executable: {downloaded}"
         )
 
-    subprocess.Popen(
-        [str(downloaded)],
-        cwd=str(downloaded.parent),
-        creationflags=(
-            subprocess.DETACHED_PROCESS
-            | subprocess.CREATE_NEW_PROCESS_GROUP
-        ),
-        close_fds=True,
+    helper = Path(tempfile.gettempdir()) / (
+        "display-x-studio-installer-updater.ps1"
+    )
+
+    log_file = Path(tempfile.gettempdir()) / (
+        "display-x-studio-installer-updater.log"
+    )
+
+    pid = os.getpid()
+
+    script = r'''
+param(
+    [string]$Installer,
+    [int]$Pid,
+    [string]$LogFile
+)
+
+"========================================" | Out-File $LogFile -Append
+"Display X Studio Windows installer updater" | Out-File $LogFile -Append
+"INSTALLER=$Installer" | Out-File $LogFile -Append
+"PID=$Pid" | Out-File $LogFile -Append
+"========================================" | Out-File $LogFile -Append
+
+"Waiting for Display X Studio to exit..." | Out-File $LogFile -Append
+
+try {
+    Wait-Process -Id $Pid -Timeout 60 -ErrorAction Stop
+}
+catch {
+    # The process normally exits, so this is expected.
+}
+
+Start-Sleep -Seconds 2
+
+if (-not (Test-Path $Installer)) {
+    "ERROR: installer does not exist." | Out-File $LogFile -Append
+    exit 1
+}
+
+"Starting installer..." | Out-File $LogFile -Append
+
+try {
+    Start-Process `
+        -FilePath $Installer `
+        -WorkingDirectory (Split-Path $Installer) `
+        -ArgumentList "/CLOSEAPPLICATIONS"
+
+    "Installer started successfully." | Out-File $LogFile -Append
+}
+catch {
+    "ERROR: $($_.Exception.Message)" | Out-File $LogFile -Append
+    exit 1
+}
+'''
+
+    helper.write_text(script, encoding="utf-8")
+
+    _start_detached(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(helper),
+            "-Installer",
+            str(downloaded),
+            "-Pid",
+            str(pid),
+            "-LogFile",
+            str(log_file),
+        ]
     )
 
     raise SystemExit(0)

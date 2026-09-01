@@ -51,7 +51,12 @@ def main() -> int:
     ]
 
     if sys.platform == "win32":
-        cmd.append("--windows-console-mode=disable")
+        cmd += [
+            "--windows-console-mode=disable",
+            f"--windows-icon-from-ico={ROOT / 'logo.ico'}",
+            "--windows-product-name=Display X Studio",
+            "--windows-file-description=Display X Studio",
+        ]
 
     elif sys.platform == "darwin":
         cmd += [
