@@ -56,6 +56,8 @@ def main() -> int:
             f"--windows-icon-from-ico={ROOT / 'logo.ico'}",
             "--windows-product-name=Display X Studio",
             "--windows-file-description=Display X Studio",
+            f"--windows-file-version={version}",
+            f"--windows-product-version={version}",
         ]
 
     elif sys.platform == "darwin":
