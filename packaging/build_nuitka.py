@@ -26,6 +26,17 @@ def get_version() -> str:
 def main() -> int:
     version = get_version()
 
+    # Windows PE version resources require numeric dotted versions.
+    # Keep the full APP_VERSION for the application/release metadata,
+    # but normalize prerelease versions for Nuitka's Windows fields.
+    windows_version = version.split("-", 1)[0].split("+", 1)[0]
+    if sys.platform == "win32":
+        parts = windows_version.split(".")
+        if len(parts) < 4:
+            windows_version = ".".join(parts + ["0"] * (4 - len(parts)))
+        elif len(parts) > 4:
+            windows_version = ".".join(parts[:4])
+
     if not ENTRY.is_file():
         raise SystemExit(f"Application entry point not found: {ENTRY}")
 
@@ -56,8 +67,8 @@ def main() -> int:
             f"--windows-icon-from-ico={ROOT / 'logo.ico'}",
             "--windows-product-name=Display X Studio",
             "--windows-file-description=Display X Studio",
-            f"--windows-file-version={version}",
-            f"--windows-product-version={version}",
+            f"--windows-file-version={windows_version}",
+            f"--windows-product-version={windows_version}",
         ]
 
     elif sys.platform == "darwin":
