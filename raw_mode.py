@@ -620,6 +620,12 @@ class RawViewer(QWidget):
         super().closeEvent(event)
 
     def load_raw_file(self):
+        main_app = getattr(self, "_main_app", None)
+
+        if main_app is not None and hasattr(main_app, "ensure_data_access_authorized"):
+            if not main_app.ensure_data_access_authorized():
+                return
+
         file_path, _ = QFileDialog.getOpenFileName(self, "Select .raw File", "", "Raw Files (*.raw)")
         if not file_path:
             return

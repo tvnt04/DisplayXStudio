@@ -8,6 +8,7 @@ from PyQt5.QtCore import Qt, QTimer, QCoreApplication, QThread, QObject, QEvent,
 from PyQt5.QtGui import QPalette, QColor, QTransform, QKeySequence, QCloseEvent, QCursor, QHelpEvent, QIcon
 from types import SimpleNamespace
 import sys
+from license_manager import LicenseManager
 import time
 from band_app import BandStitchProApp
 import gc
@@ -248,6 +249,8 @@ class ModeSelectionDialog(QDialog):
     """Simple dialog to select which mode to open."""
 
     def __init__(self, parent=None):
+        self.license_manager = LicenseManager(self)
+        self.license_manager = LicenseManager(self)
         super().__init__(parent)
         self.setWindowTitle("Select Display Mode")
         self.setFixedSize(520, 360)
@@ -314,6 +317,11 @@ class ModeSelectionDialog(QDialog):
         buttons.addWidget(cancel_btn)
 
         layout.addLayout(buttons)
+
+
+    def ensure_data_access_authorized(self):
+        """Check authorization before allowing application data to load."""
+        return self.license_manager.ensure_authorized()
 
     def get_selected_mode(self):
         """Return the selected mode: 'band', 'raw', 'video', or 'tiled'."""

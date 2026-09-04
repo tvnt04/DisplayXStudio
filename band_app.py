@@ -2028,6 +2028,12 @@ class BandStitchProApp(BandViewsMixin, QWidget):
             self.update_views()
        
     def select_folder(self):
+        main_app = getattr(self, "main_app", None)
+
+        if main_app is not None and hasattr(main_app, "ensure_data_access_authorized"):
+            if not main_app.ensure_data_access_authorized():
+                return
+
         folder = QFileDialog.getExistingDirectory(self, "Select folder with .bandXX files")
         if not folder:
             return
