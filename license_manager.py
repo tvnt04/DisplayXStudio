@@ -31,6 +31,7 @@ MCowBQYDK2VwAyEApWKVqh9zvD/2m1qJ1XvQ2zwufpUKvXnQIDB5us0fRj0=
 
 
 TEMP_KEY_FILENAME = "license.json"
+CACHED_AUTHORIZATION_FILENAME = "authorization_cache.json"
 
 
 def _normalize_key(value: str) -> str:
@@ -218,6 +219,51 @@ def is_authorized(record: dict | None) -> bool:
     return False
 
 # ---------------------------------------------------------------------------
+# Cached online authorization
+# ---------------------------------------------------------------------------
+
+def get_cached_authorization_path() -> Path:
+    """Return the local cache path for the last known-good online record."""
+    return Path(get_app_data_path(CACHED_AUTHORIZATION_FILENAME))
+
+
+def get_cached_authorization() -> dict | None:
+    """Read the last known-good signed authorization record."""
+    path = get_cached_authorization_path()
+
+    try:
+        if not path.is_file():
+            return None
+
+        data = json.loads(path.read_text(encoding="utf-8"))
+
+        if not isinstance(data, dict):
+            return None
+
+        if not verify_signed_authorization(data):
+            return None
+
+        return data
+
+    except Exception:
+        return None
+
+
+def save_cached_authorization(record: dict) -> None:
+    """Save a verified online authorization record for offline use."""
+    if not verify_signed_authorization(record):
+        raise ValueError("Cannot cache an unsigned or invalid authorization record.")
+
+    path = get_cached_authorization_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    path.write_text(
+        json.dumps(record, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Runtime license manager
 # ---------------------------------------------------------------------------
 
@@ -233,7 +279,7 @@ class LicenseManager:
     """
 
     # Set this to the actual online authorization.json URL later.
-    AUTHORIZATION_URL = ""
+    AUTHORIZATION_URL = "https://raw.githubusercontent.com/tvnt04/DXSL/main/authorization.json"
 
     def __init__(self, parent=None):
         self.parent = parent
@@ -271,15 +317,36 @@ class LicenseManager:
             return None
 
     def check_current_authorization(self) -> bool:
-        """Check the current online authorization against local keys."""
+        """
+        Check authorization using the online record first.
+
+        If the network is temporarily unavailable, use the last
+        known-good signed authorization record.
+        """
         record = self.fetch_online_authorization()
 
-        if record is None:
+        if record is not None:
+            if is_authorized(record):
+                try:
+                    save_cached_authorization(record)
+                except Exception:
+                    pass
+
+                self._authorized = True
+                return True
+
             self._authorized = False
             return False
 
-        self._authorized = is_authorized(record)
-        return self._authorized
+        # Network unavailable: use the last verified authorization record.
+        cached = get_cached_authorization()
+
+        if cached is not None and is_authorized(cached):
+            self._authorized = True
+            return True
+
+        self._authorized = False
+        return False
 
     def request_key(self) -> str | None:
         """Ask the user for an authorization key."""
@@ -309,10 +376,9 @@ class LicenseManager:
         """
         Ensure the application is authorized to load data.
 
-        If the current online authorization matches the permanent key
-        or locally stored temporary key, access is granted.
-
-        Otherwise the user is asked for the current online key.
+        A verified online authorization is preferred. If the network is
+        temporarily unavailable, the last known-good signed authorization
+        record may be used.
         """
         if self._authorized:
             return True
@@ -320,15 +386,29 @@ class LicenseManager:
         record = self.fetch_online_authorization()
 
         if record is not None and is_authorized(record):
+            try:
+                save_cached_authorization(record)
+            except Exception:
+                pass
+
             self._authorized = True
             return True
+
+        # Network unavailable: use the last verified authorization record.
+        if record is None:
+            cached = get_cached_authorization()
+
+            if cached is not None and is_authorized(cached):
+                self._authorized = True
+                return True
 
         entered_key = self.request_key()
 
         if not entered_key:
             return False
 
-        # The entered key must be the currently published online key.
+        # A newly entered key must be verified against the current
+        # online record. Manual authorization is not accepted offline.
         if record is None:
             return False
 
@@ -337,14 +417,18 @@ class LicenseManager:
         if not isinstance(online_key, str):
             return False
 
-        if _normalize_key(entered_key) != _normalize_key(online_key):
-            return False
-
-        # The online record itself must still be genuinely signed.
         if not verify_signed_authorization(record):
             return False
 
+        if _normalize_key(entered_key) != _normalize_key(online_key):
+            return False
+
         save_local_temp_key(entered_key)
+
+        try:
+            save_cached_authorization(record)
+        except Exception:
+            pass
 
         self._authorized = True
         return True
