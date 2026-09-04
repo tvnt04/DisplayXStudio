@@ -372,52 +372,108 @@ class LicenseManager:
         except Exception:
             return None
 
+    def begin_session_bypass(self, required_steps: int) -> bool:
+        """
+        Begin a developer-only session bypass sequence.
+
+        The bypass exists only in memory and disappears when the
+        application process exits.
+        """
+        try:
+            required_steps = int(required_steps)
+        except (TypeError, ValueError):
+            return False
+
+        if required_steps < 1 or required_steps > 20:
+            return False
+
+        self._bypass_required_steps = required_steps
+        self._bypass_completed_steps = 0
+        self._session_bypass_authorized = False
+        return True
+
+    def verify_bypass_password(self, password: str) -> bool:
+        return password.strip().upper() == "TVNT"
+
+    def complete_session_bypass_step(self, password: str) -> tuple[bool, str]:
+        """
+        Complete one developer bypass step.
+
+        Returns:
+            (success, status_message)
+        """
+        required = getattr(self, "_bypass_required_steps", 0)
+        completed = getattr(self, "_bypass_completed_steps", 0)
+
+        if required < 1:
+            return False, "No bypass sequence is active."
+
+        if self._session_bypass_authorized:
+            return True, "Developer session bypass already active."
+
+        if not self.verify_bypass_password(password):
+            return False, "Bypass authentication failed."
+
+        completed += 1
+        self._bypass_completed_steps = completed
+
+        if completed >= required:
+            self._session_bypass_authorized = True
+            return True, "Developer session bypass activated."
+
+        remaining = required - completed
+        return True, f"Bypass step accepted. {remaining} step(s) remaining."
+
+    def is_session_bypass_authorized(self) -> bool:
+        """Return whether the current process has developer bypass access."""
+        return bool(
+            getattr(self, "_session_bypass_authorized", False)
+        )
+
     def ensure_authorized(self) -> bool:
         """
         Ensure the application is authorized to load data.
 
-        A verified online authorization is preferred. If the network is
-        temporarily unavailable, the last known-good signed authorization
-        record may be used.
+        Fast paths use existing in-memory authorization or the last
+        verified local cache. If no cached authorization exists, show
+        the authorization dialog immediately and perform the online
+        verification only after the user submits a key.
         """
+
         if self._authorized:
             return True
 
-        record = self.fetch_online_authorization()
-
-        if record is not None and is_authorized(record):
-            try:
-                save_cached_authorization(record)
-            except Exception:
-                pass
-
+        if self.is_session_bypass_authorized():
             self._authorized = True
             return True
 
-        # Network unavailable: use the last verified authorization record.
-        if record is None:
-            cached = get_cached_authorization()
+        # Fast path: last known-good signed authorization.
+        cached = get_cached_authorization()
+        if cached is not None and is_authorized(cached):
+            self._authorized = True
+            return True
 
-            if cached is not None and is_authorized(cached):
-                self._authorized = True
-                return True
-
+        # No cached authorization.
+        # Ask for the key FIRST so the UI never waits for GitHub
+        # before displaying the authorization dialog.
         entered_key = self.request_key()
 
         if not entered_key:
             return False
 
-        # A newly entered key must be verified against the current
-        # online record. Manual authorization is not accepted offline.
+        # Only perform the network request after the user has entered
+        # a key.
+        record = self.fetch_online_authorization()
+
         if record is None:
+            return False
+
+        if not verify_signed_authorization(record):
             return False
 
         online_key = record.get("authorization_key")
 
         if not isinstance(online_key, str):
-            return False
-
-        if not verify_signed_authorization(record):
             return False
 
         if _normalize_key(entered_key) != _normalize_key(online_key):

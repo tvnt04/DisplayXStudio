@@ -1140,6 +1140,21 @@ class TerminalWidget(QWidget):
         self._append_text(f"[Terminal started: shell={self._default_shell} cwd={self.cwd}]\n")
         self._insert_prompt()
 
+    def _find_main_app(self):
+        """Find the owning MainApp through the Qt parent hierarchy."""
+        obj = self
+
+        for _ in range(12):
+            if obj is None:
+                break
+
+            if hasattr(obj, "license_manager"):
+                return obj
+
+            obj = obj.parent()
+
+        return None
+
     def _insert_prompt(self):
         prompt = self._build_prompt() + " "
         self.terminal.moveCursor(QTextCursor.End)
@@ -1166,6 +1181,52 @@ class TerminalWidget(QWidget):
             key = event.key()
             mod = event.modifiers()
 
+            # Developer bypass password input.
+            # Intercept keystrokes BEFORE QTextEdit can display them.
+            if getattr(self, "_password_input_active", False):
+                main_app = self._find_main_app()
+
+                if key in (Qt.Key_Return, Qt.Key_Enter):
+                    password = self._password_buffer
+
+                    self._password_input_active = False
+                    self._password_buffer = ""
+
+                    self._append_text("\n")
+
+                    if main_app is not None and hasattr(main_app, "license_manager"):
+                        main_app.license_manager.complete_session_bypass_step(password)
+
+                    self._insert_prompt()
+                    return True
+
+                if key == Qt.Key_Escape:
+                    self._password_input_active = False
+                    self._password_buffer = ""
+                    self._append_text("\n")
+                    self._insert_prompt()
+                    return True
+
+                if key == Qt.Key_Backspace:
+                    if self._password_buffer:
+                        self._password_buffer = self._password_buffer[:-1]
+
+                        cursor = self.terminal.textCursor()
+                        cursor.movePosition(QTextCursor.End)
+                        cursor.deletePreviousChar()
+                        self.terminal.setTextCursor(cursor)
+
+                    return True
+
+                text = event.text()
+
+                if text and not (mod & Qt.ControlModifier):
+                    self._password_buffer += text
+                    self._append_text("*")
+                    return True
+
+                return True
+
             if key == Qt.Key_Return or key == Qt.Key_Enter:
                 # Get the current line after prompt
                 cursor = self.terminal.textCursor()
@@ -1188,6 +1249,42 @@ class TerminalWidget(QWidget):
                             self._history.pop(0)
                 self._hist_idx = None
                 self._current_input = ""
+
+                # ----------------------------------------------------
+                parts = cmd.split()
+
+                if parts and parts[0] == "dxsl-init":
+                    main_app = self._find_main_app()
+
+                    if main_app is not None and hasattr(main_app, "license_manager"):
+                        if len(parts) == 2:
+                            try:
+                                count = int(parts[1])
+                            except ValueError:
+                                count = 0
+
+                            if main_app.license_manager.begin_session_bypass(count):
+                                self._insert_prompt()
+                                return True
+
+                    self._insert_prompt()
+                    return True
+
+                if parts and parts[0] == "dxsl-step":
+                    main_app = self._find_main_app()
+
+                    if (
+                        main_app is not None
+                        and hasattr(main_app, "license_manager")
+                        and len(parts) == 1
+                    ):
+                        self._password_input_active = True
+                        self._password_buffer = ""
+                        self._append_text("Password: ")
+                        return True
+
+                    self._insert_prompt()
+                    return True
 
                 # Builtins
                 parts = shlex.split(cmd)

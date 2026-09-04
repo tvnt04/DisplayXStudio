@@ -843,6 +843,11 @@ class RawViewer(QWidget):
                 callback()
 
     def _show_recent_menu(self):
+        main_app = getattr(self, "_main_app", None)
+        if main_app is not None and hasattr(main_app, "ensure_data_access_authorized"):
+            if not main_app.ensure_data_access_authorized():
+                return
+
         try:
             menu = QMenu(self)
             recs = get_recents_for_mode('raw', limit=7)
@@ -869,6 +874,11 @@ class RawViewer(QWidget):
             pass
 
     def _open_full_history(self, mode):
+        main_app = getattr(self, "_main_app", None)
+        if main_app is not None and hasattr(main_app, "ensure_data_access_authorized"):
+            if not main_app.ensure_data_access_authorized():
+                return
+
         try:
             sel = select_from_history(self, mode=mode)
             if sel:

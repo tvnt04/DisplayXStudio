@@ -1281,6 +1281,9 @@ class MainApp(QMainWindow):
 
 
     def restore_session(self):
+        if not self.ensure_data_access_authorized():
+            return
+
         if not os.path.exists(self.session_file):
             QMessageBox.information(self, "No Session", "No previous session found.")
             return

@@ -2077,6 +2077,10 @@ class BandStitchProApp(BandViewsMixin, QWidget):
     def _notify_iris_folder_loaded(self, folder: str):
         pass
     def _show_recent_menu(self):
+        if self.main_app is not None and hasattr(self.main_app, "ensure_data_access_authorized"):
+            if not self.main_app.ensure_data_access_authorized():
+                return
+
         try:
             menu = QMenu(self)
             recs = get_recents_for_mode('band', limit=7)
@@ -2140,6 +2144,10 @@ class BandStitchProApp(BandViewsMixin, QWidget):
         self.load_folder_data()
 
     def _open_full_history(self, mode):
+        if self.main_app is not None and hasattr(self.main_app, "ensure_data_access_authorized"):
+            if not self.main_app.ensure_data_access_authorized():
+                return
+
         try:
             sel = select_from_history(self, mode=mode)
             if sel:
