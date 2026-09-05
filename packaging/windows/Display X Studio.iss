@@ -42,3 +42,4 @@ Filename: "{app}\{#MyAppExeName}"; \
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\_internal"
+Type: filesandordirs; Name: "{localappdata}\Display X Studio"
