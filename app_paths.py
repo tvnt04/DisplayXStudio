@@ -2,13 +2,34 @@ from __future__ import annotations
 
 import os
 import sys
+import atexit
+import shutil
+import tempfile
 from pathlib import Path
 
 APP_NAME = "Display X Studio"
+_APPIMAGE_DATA_DIR = None
+
+
+def _cleanup_appimage_data() -> None:
+    global _APPIMAGE_DATA_DIR
+    if _APPIMAGE_DATA_DIR:
+        shutil.rmtree(_APPIMAGE_DATA_DIR, ignore_errors=True)
+        _APPIMAGE_DATA_DIR = None
+
+
+atexit.register(_cleanup_appimage_data)
 
 
 def get_app_data_dir() -> str:
-    """Return a per-user directory for writable application state."""
+    """Return the writable application-state directory."""
+    global _APPIMAGE_DATA_DIR
+
+    if os.environ.get("APPIMAGE"):
+        if _APPIMAGE_DATA_DIR is None:
+            _APPIMAGE_DATA_DIR = tempfile.mkdtemp(prefix="display-x-studio-")
+        return _APPIMAGE_DATA_DIR
+
     if os.name == "nt":
         base = os.environ.get("LOCALAPPDATA") or str(Path.home())
         path = Path(base) / APP_NAME
