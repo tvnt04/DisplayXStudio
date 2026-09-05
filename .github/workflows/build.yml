@@ -230,8 +230,6 @@ jobs:
           rm -rf "DMG Contents"
           mkdir -p "DMG Contents"
           cp -R "dist/Display X Studio.app" "DMG Contents/"
-          cp "packaging/uninstall/macos/Uninstall Display X Studio.command" "DMG Contents/"
-          chmod +x "DMG Contents/Uninstall Display X Studio.command"
 
       - name: Create macOS DMG
         if: matrix.platform == 'macos'
