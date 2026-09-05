@@ -5,6 +5,8 @@ import hashlib
 import json
 from pathlib import Path
 
+from PyQt5.QtCore import QEventLoop, QThread, QTimer, pyqtSignal
+
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
@@ -267,6 +269,21 @@ def save_cached_authorization(record: dict) -> None:
 # Runtime license manager
 # ---------------------------------------------------------------------------
 
+class AuthorizationWorker(QThread):
+    result_ready = pyqtSignal(object)
+
+    def run(self):
+        try:
+            self.result_ready.emit(self.fetch())
+        except Exception as e:
+            self.result_ready.emit(e)
+
+    @staticmethod
+    def fetch():
+        manager = LicenseManager()
+        return manager.fetch_online_authorization()
+
+
 class LicenseManager:
     """
     Runtime authorization controller.
@@ -430,16 +447,48 @@ class LicenseManager:
             getattr(self, "_session_bypass_authorized", False)
         )
 
+    def _fetch_online_authorization_responsive(self):
+        """Fetch online authorization without blocking the Qt GUI."""
+        worker = AuthorizationWorker()
+        loop = QEventLoop()
+        result = [None]
+        finished = [False]
+
+        def on_result(value):
+            result[0] = value
+            finished[0] = True
+            loop.quit()
+
+        worker.result_ready.connect(on_result)
+        worker.start()
+
+        timeout_timer = QTimer()
+        timeout_timer.setSingleShot(True)
+        timeout_timer.timeout.connect(loop.quit)
+        timeout_timer.start(11000)
+
+        loop.exec_()
+
+        if not finished[0]:
+            worker.quit()
+            worker.wait(100)
+            return None, False
+
+        worker.quit()
+        worker.wait()
+
+        if isinstance(result[0], Exception):
+            return None, False
+
+        return result[0], True
+
     def ensure_authorized(self) -> bool:
         """
-        Ensure the application is authorized to load data.
+        Check the live authorization first.
 
-        Fast paths use existing in-memory authorization or the last
-        verified local cache. If no cached authorization exists, show
-        the authorization dialog immediately and perform the online
-        verification only after the user submits a key.
+        The cached authorization is trusted only when the online
+        authorization service cannot be reached.
         """
-
         if self._authorized:
             return True
 
@@ -447,25 +496,34 @@ class LicenseManager:
             self._authorized = True
             return True
 
-        # Fast path: last known-good signed authorization.
-        cached = get_cached_authorization()
-        if cached is not None and is_authorized(cached):
-            self._authorized = True
-            return True
+        record, online_available = self._fetch_online_authorization_responsive()
 
-        # No cached authorization.
-        # Ask for the key FIRST so the UI never waits for GitHub
-        # before displaying the authorization dialog.
+        if online_available:
+            if record is not None and is_authorized(record):
+                try:
+                    save_cached_authorization(record)
+                except Exception:
+                    pass
+
+                self._authorized = True
+                return True
+
+            self._authorized = False
+        else:
+            cached = get_cached_authorization()
+
+            if cached is not None and is_authorized(cached):
+                self._authorized = True
+                return True
+
         entered_key = self.request_key()
 
         if not entered_key:
             return False
 
-        # Only perform the network request after the user has entered
-        # a key.
-        record = self.fetch_online_authorization()
+        record, online_available = self._fetch_online_authorization_responsive()
 
-        if record is None:
+        if not online_available or record is None:
             return False
 
         if not verify_signed_authorization(record):
