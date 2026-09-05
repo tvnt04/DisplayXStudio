@@ -129,6 +129,9 @@ jobs:
 
           chmod +x AppDir/AppRun
 
+          cp packaging/uninstall/linux/Display-X-Studio-Uninstall.sh .
+          chmod +x Display-X-Studio-Uninstall.sh
+
           mkdir -p \
             AppDir/usr/share/icons/hicolor/256x256/apps
 
@@ -223,13 +226,23 @@ jobs:
         run: |
           test -d "dist/Display X Studio.app"
 
+      - name: Prepare macOS DMG contents
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          rm -rf "DMG Contents"
+          mkdir -p "DMG Contents"
+          cp -R "dist/Display X Studio.app" "DMG Contents/"
+          cp "packaging/uninstall/macos/Uninstall Display X Studio.command" "DMG Contents/"
+          chmod +x "DMG Contents/Uninstall Display X Studio.command"
+
       - name: Create macOS DMG
         if: matrix.platform == 'macos'
         shell: bash
         run: |
           hdiutil create \
             -volname "Display X Studio" \
-            -srcfolder "dist/Display X Studio.app" \
+            -srcfolder "DMG Contents" \
             -ov \
             -format UDZO \
             "${{ matrix.artifact }}.dmg"
@@ -270,6 +283,7 @@ jobs:
             *.zip
             *-Setup.exe
             *.dmg
+            *.sh
             *.sha256
           if-no-files-found: error
           retention-days: 14
