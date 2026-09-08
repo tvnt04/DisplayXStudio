@@ -4,7 +4,7 @@ from PyQt5.QtWidgets import (
     QDialog, QRadioButton, QButtonGroup, QMessageBox, QCheckBox, QSplitter, QToolTip, QMenu, QAction,
     QFrame
 )
-from PyQt5.QtCore import Qt, QTimer, QCoreApplication, QThread, QObject, QEvent, QPoint, qInstallMessageHandler, pyqtSignal
+from PyQt5.QtCore import Qt, QTimer, QCoreApplication, QThread, QObject, QEvent, QEventLoop, QPoint, qInstallMessageHandler, pyqtSignal
 from PyQt5.QtGui import QPalette, QColor, QTransform, QKeySequence, QCloseEvent, QCursor, QHelpEvent, QIcon
 from types import SimpleNamespace
 import sys
@@ -447,6 +447,21 @@ class UpdateDownloadWorker(QThread):
         except Exception as e:
             self.result_ready.emit(e)
 
+class AuthorizationCheckWorker(QThread):
+    result_ready = pyqtSignal(object)
+
+    def __init__(self, license_manager, parent=None):
+        super().__init__(parent)
+        self._license_manager = license_manager
+
+    def run(self):
+        try:
+            result = self._license_manager.ensure_authorized()
+            self.result_ready.emit(result)
+        except Exception as e:
+            self.result_ready.emit(e)
+
+
 class MainApp(QMainWindow):
     def __init__(self):
         self.license_manager = LicenseManager(self)
@@ -644,9 +659,43 @@ class MainApp(QMainWindow):
         self._update_worker.result_ready.connect(self._on_update_check_result)
         self._update_worker.start()
 
+        self._authorization_ready = False
+        self._authorization_result = False
+        self._authorization_worker = AuthorizationCheckWorker(
+            self.license_manager,
+            self
+        )
+        self._authorization_worker.result_ready.connect(
+            self._on_authorization_check_result
+        )
+        self._authorization_worker.start()
+
+    def _on_authorization_check_result(self, result):
+        self._authorization_ready = True
+
+        if isinstance(result, Exception):
+            print(f"Authorization check failed: {result}", file=sys.stderr)
+            self._authorization_result = False
+            return
+
+        self._authorization_result = bool(result)
+
     def ensure_data_access_authorized(self):
-        """Check authorization before allowing application data to load."""
-        return self.license_manager.ensure_authorized()
+        """Use the startup authorization check without starting another network request."""
+        if not self._authorization_ready:
+            loop = QEventLoop()
+
+            def on_finished(_result):
+                loop.quit()
+
+            self._authorization_worker.result_ready.connect(on_finished)
+            loop.exec_()
+            try:
+                self._authorization_worker.result_ready.disconnect(on_finished)
+            except Exception:
+                pass
+
+        return self._authorization_result
 
 
     def _on_update_check_result(self, result):
