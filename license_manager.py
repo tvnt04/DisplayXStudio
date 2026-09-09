@@ -333,6 +333,33 @@ class LicenseManager:
         except Exception:
             return None
 
+    def authorize_with_record(self, entered_key: str, record: dict) -> bool:
+        """Authorize an entered key against an already-fetched signed record."""
+        try:
+            if not verify_signed_authorization(record):
+                return False
+
+            online_key = record.get("authorization_key")
+
+            if not isinstance(online_key, str):
+                return False
+
+            if _normalize_key(entered_key) != _normalize_key(online_key):
+                return False
+
+            save_local_temp_key(entered_key)
+
+            try:
+                save_cached_authorization(record)
+            except Exception:
+                pass
+
+            self._authorized = True
+            return True
+
+        except Exception:
+            return False
+
     def check_current_authorization(self) -> bool:
         """
         Check authorization using the online record first.

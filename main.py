@@ -456,7 +456,14 @@ class AuthorizationCheckWorker(QThread):
 
     def run(self):
         try:
-            result = self._license_manager.ensure_authorized()
+            record = self._license_manager.fetch_online_authorization()
+
+            if record is not None:
+                from license_manager import is_authorized
+                result = (is_authorized(record), record, True)
+            else:
+                result = (False, None, False)
+
             self.result_ready.emit(result)
         except Exception as e:
             self.result_ready.emit(e)
@@ -672,16 +679,30 @@ class MainApp(QMainWindow):
 
     def _on_authorization_check_result(self, result):
         self._authorization_ready = True
+        self._authorization_record = None
+        self._authorization_online_available = False
 
         if isinstance(result, Exception):
             print(f"Authorization check failed: {result}", file=sys.stderr)
             self._authorization_result = False
             return
 
-        self._authorization_result = bool(result)
+        authorized, record, online_available = result
+
+        self._authorization_record = record
+        self._authorization_online_available = online_available
+        self._authorization_result = bool(authorized)
+
+        if not online_available:
+            from license_manager import get_cached_authorization, is_authorized
+            cached = get_cached_authorization()
+
+            if cached is not None and is_authorized(cached):
+                self.license_manager._authorized = True
+                self._authorization_result = True
 
     def ensure_data_access_authorized(self):
-        """Use the startup authorization check without starting another network request."""
+        """Check the startup authorization result when protected data is requested."""
         if not self._authorization_ready:
             loop = QEventLoop()
 
@@ -690,13 +711,33 @@ class MainApp(QMainWindow):
 
             self._authorization_worker.result_ready.connect(on_finished)
             loop.exec_()
+
             try:
                 self._authorization_worker.result_ready.disconnect(on_finished)
             except Exception:
                 pass
 
-        return self._authorization_result
+        if self._authorization_result:
+            return True
 
+        # Authorization is required only when the user actually requests data access.
+        record = getattr(self, "_authorization_record", None)
+
+        if record is None:
+            return False
+
+        entered_key = self.license_manager.request_key()
+
+        if not entered_key:
+            return False
+
+        authorized = self.license_manager.authorize_with_record(
+            entered_key,
+            record,
+        )
+
+        self._authorization_result = authorized
+        return authorized
 
     def _on_update_check_result(self, result):
         if isinstance(result, Exception):
@@ -2086,7 +2127,6 @@ if __name__ == "__main__":
             pass
 
         window.showMaximized()
-        app.processEvents()
 
         try:
             from x import SpaceStudioIntro
