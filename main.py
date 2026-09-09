@@ -2126,23 +2126,40 @@ if __name__ == "__main__":
         except Exception:
             pass
 
-        window.showMaximized()
-
         try:
             from x import SpaceStudioIntro
 
-            # Create intro as a child of the main window
-            intro = SpaceStudioIntro(window)
+            # Keep the real application content completely out of the
+            # window while the intro is running. The intro occupies the
+            # same MainApp window and is replaced by the real UI when done.
+            original_central_widget = window.takeCentralWidget()
+
+            intro_host = QWidget()
+            intro_host.setStyleSheet("background-color: black;")
+            intro_layout = QVBoxLayout(intro_host)
+            intro_layout.setContentsMargins(0, 0, 0, 0)
+            intro_layout.setSpacing(0)
+
+            intro = SpaceStudioIntro(intro_host)
+            intro_layout.addWidget(intro)
+
+            window.setCentralWidget(intro_host)
+
+            # Establish the final window size before the animation starts.
+            window.setWindowState(Qt.WindowMaximized)
+            window.show()
+            app.processEvents()
 
             def launch_main_app():
+                intro.close()
+                window.setCentralWidget(original_central_widget)
+                intro_host.deleteLater()
                 window.showMaximized()
                 window.setWindowState(Qt.WindowMaximized)
                 if hasattr(app, '_intro_ref'):
                     del app._intro_ref
 
             intro.finished_callback = launch_main_app
-
-            # Start intro (it will overlay its parent window)
             intro.start()
 
             app._intro_ref = intro
