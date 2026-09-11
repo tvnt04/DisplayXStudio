@@ -459,8 +459,24 @@ class AuthorizationCheckWorker(QThread):
             record = self._license_manager.fetch_online_authorization()
 
             if record is not None:
-                from license_manager import is_authorized
-                result = (is_authorized(record), record, True)
+                from license_manager import (
+                    get_local_temp_key,
+                    is_authorized,
+                )
+
+                authorized = is_authorized(record)
+
+                # /status cannot identify a saved temporary key, so silently
+                # revalidate the saved key when the server requires a license.
+                if not authorized:
+                    saved_key = get_local_temp_key()
+
+                    if saved_key:
+                        authorized = self._license_manager.authorize_with_key(
+                            saved_key
+                        )
+
+                result = (authorized, record, True)
             else:
                 result = (False, None, False)
 
@@ -702,7 +718,7 @@ class MainApp(QMainWindow):
                 self._authorization_result = True
 
     def ensure_data_access_authorized(self):
-        """Check the startup authorization result when protected data is requested."""
+        """Check startup authorization, then authorize an entered key if needed."""
         if not self._authorization_ready:
             loop = QEventLoop()
 
@@ -720,23 +736,19 @@ class MainApp(QMainWindow):
         if self._authorization_result:
             return True
 
-        # Authorization is required only when the user actually requests data access.
-        record = getattr(self, "_authorization_record", None)
-
-        if record is None:
-            return False
-
+        # If startup could not reach the server, LicenseManager can use
+        # its signed offline cache or perform the normal online key flow.
         entered_key = self.license_manager.request_key()
 
         if not entered_key:
             return False
 
-        authorized = self.license_manager.authorize_with_record(
-            entered_key,
-            record,
-        )
+        authorized = self.license_manager.authorize_with_key(entered_key)
 
-        self._authorization_result = authorized
+        if authorized:
+            self._authorization_result = True
+            self.license_manager._authorized = True
+
         return authorized
 
     def _on_update_check_result(self, result):

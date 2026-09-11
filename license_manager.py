@@ -34,6 +34,7 @@ MCowBQYDK2VwAyEApWKVqh9zvD/2m1qJ1XvQ2zwufpUKvXnQIDB5us0fRj0=
 
 TEMP_KEY_FILENAME = "license.json"
 CACHED_AUTHORIZATION_FILENAME = "authorization_cache.json"
+AUTHORIZATION_CACHE_VERSION = 2
 
 
 def _normalize_key(value: str) -> str:
@@ -103,25 +104,26 @@ def clear_local_temp_key() -> None:
         pass
 
 
-def permanent_key_matches(online_key: str | None) -> bool:
-    """Check whether the online key matches the permanent key."""
-    if not online_key:
+def permanent_key_matches(mode: str | None, authorized: bool) -> bool:
+    """Check whether the server granted permanent authorization."""
+    return (
+        authorized
+        and isinstance(mode, str)
+        and mode.strip().lower() == "permanent"
+    )
+
+
+def temporary_key_matches(record: dict | None, key: str | None) -> bool:
+    """Check whether a signed server assertion matches a local key."""
+    if not isinstance(record, dict) or not isinstance(key, str):
         return False
 
-    return _key_hash(online_key) == _key_hash(PERMANENT_KEY)
+    key_hash = record.get("key_hash")
 
-
-def temporary_key_matches(online_key: str | None) -> bool:
-    """Check whether the online key matches the local temporary key."""
-    if not online_key:
+    if not isinstance(key_hash, str) or not key_hash:
         return False
 
-    local_key = get_local_temp_key()
-
-    if not local_key:
-        return False
-
-    return _key_hash(online_key) == _key_hash(local_key)
+    return _key_hash(key) == key_hash
 
 
 def _get_public_key() -> Ed25519PublicKey:
@@ -136,33 +138,26 @@ def _get_public_key() -> Ed25519PublicKey:
 
 def verify_signed_authorization(record: dict) -> bool:
     """
-    Verify that the online authorization record was signed
-    using the developer's private key.
+    Verify a signed authorization assertion returned by the license Worker.
 
     Expected structure:
 
         {
             "version": 1,
-            "authorization_key": "ABC123",
+            "authorized": true,
+            "mode": "temporary",
+            "key_hash": "...",
+            "issued_at": 1234567890,
+            "expires": 1234568190,
             "signature": "base64..."
         }
     """
     if not isinstance(record, dict):
         return False
 
-    authorization_key = record.get("authorization_key")
     signature_b64 = record.get("signature")
 
-    if not isinstance(authorization_key, str):
-        return False
-
-    if not authorization_key.strip():
-        return False
-
-    if not isinstance(signature_b64, str):
-        return False
-
-    if not signature_b64.strip():
+    if not isinstance(signature_b64, str) or not signature_b64.strip():
         return False
 
     try:
@@ -185,6 +180,23 @@ def verify_signed_authorization(record: dict) -> bool:
 
         _get_public_key().verify(signature, message)
 
+        if signed_data.get("version") != 1:
+            return False
+
+        issued_at = signed_data.get("issued_at")
+        expires = signed_data.get("expires")
+
+        if not isinstance(issued_at, int) or not isinstance(expires, int):
+            return False
+
+        now = __import__("time").time()
+
+        if now > expires:
+            return False
+
+        if expires <= issued_at:
+            return False
+
         return True
 
     except Exception:
@@ -192,33 +204,11 @@ def verify_signed_authorization(record: dict) -> bool:
 
 
 def is_authorized(record: dict | None) -> bool:
-    """
-    Apply the Display X Studio three-key authorization logic.
-
-    1. Online authorization must have a valid developer signature.
-    2. If Online == Permanent -> authorized.
-    3. Otherwise, if Online == Temporary -> authorized.
-    4. Otherwise -> unauthorized.
-    """
+    """Return whether a signed server assertion currently authorizes the app."""
     if not verify_signed_authorization(record or {}):
         return False
 
-    online_key = record.get("authorization_key")
-
-    if not isinstance(online_key, str):
-        return False
-
-    # Master authorization:
-    # Online == Permanent
-    if permanent_key_matches(online_key):
-        return True
-
-    # Normal customer authorization:
-    # Online == Temporary
-    if temporary_key_matches(online_key):
-        return True
-
-    return False
+    return bool((record or {}).get("authorized"))
 
 # ---------------------------------------------------------------------------
 # Cached online authorization
@@ -295,30 +285,24 @@ class LicenseManager:
       4. Saves a successfully entered key locally.
     """
 
-    # Set this to the actual online authorization.json URL later.
-    AUTHORIZATION_URL = "https://raw.githubusercontent.com/tvnt04/DXSL/main/authorization.json"
+    # Cloudflare Worker licensing API.
+    AUTHORIZATION_URL = "https://displayx-license-api.dxsl.workers.dev"
+    STATUS_URL = f"{AUTHORIZATION_URL}/status"
+    AUTHORIZE_URL = f"{AUTHORIZATION_URL}/authorize"
 
     def __init__(self, parent=None):
         self.parent = parent
         self._authorized = False
 
     def fetch_online_authorization(self) -> dict | None:
-        """
-        Fetch the current signed authorization record.
-
-        The URL is intentionally empty until the developer chooses
-        the online authorization location.
-        """
-        if not self.AUTHORIZATION_URL:
-            return None
-
+        """Fetch the signed server authorization status."""
         try:
             from urllib.request import Request, urlopen
 
             request = Request(
-                self.AUTHORIZATION_URL,
+                self.STATUS_URL,
                 headers={
-                    "User-Agent": "Display-X-Studio-License/1.0",
+                    "User-Agent": "Display-X-Studio-License/2.0",
                     "Accept": "application/json",
                 },
             )
@@ -328,23 +312,85 @@ class LicenseManager:
                     response.read().decode("utf-8")
                 )
 
-            return data if isinstance(data, dict) else None
+            if not isinstance(data, dict):
+                return None
+
+            return data
 
         except Exception:
             return None
 
+    def authorize_with_key(self, entered_key: str) -> bool:
+        """Send a user-entered key to the server and verify its signed response."""
+        try:
+            from urllib.request import Request, urlopen
+
+            normalized = _normalize_key(entered_key)
+
+            if not normalized:
+                return False
+
+            body = json.dumps({
+                "key": normalized,
+            }).encode("utf-8")
+
+            request = Request(
+                self.AUTHORIZE_URL,
+                data=body,
+                method="POST",
+                headers={
+                    "User-Agent": "Display-X-Studio-License/2.0",
+                    "Accept": "application/json",
+                    "Content-Type": "application/json",
+                },
+            )
+
+            with urlopen(request, timeout=10) as response:
+                record = json.loads(
+                    response.read().decode("utf-8")
+                )
+
+            if not isinstance(record, dict):
+                return False
+
+            if not verify_signed_authorization(record):
+                return False
+
+            if not bool(record.get("authorized")):
+                return False
+
+            if record.get("mode") != "temporary":
+                return False
+
+            if not temporary_key_matches(record, normalized):
+                return False
+
+            save_local_temp_key(normalized)
+
+            try:
+                save_cached_authorization(record)
+            except Exception:
+                pass
+
+            self._authorized = True
+            return True
+
+        except Exception:
+            return False
+
     def authorize_with_record(self, entered_key: str, record: dict) -> bool:
-        """Authorize an entered key against an already-fetched signed record."""
+        """Authorize against a signed server assertion."""
         try:
             if not verify_signed_authorization(record):
                 return False
 
-            online_key = record.get("authorization_key")
-
-            if not isinstance(online_key, str):
+            if not bool(record.get("authorized")):
                 return False
 
-            if _normalize_key(entered_key) != _normalize_key(online_key):
+            if record.get("mode") != "temporary":
+                return False
+
+            if not temporary_key_matches(record, entered_key):
                 return False
 
             save_local_temp_key(entered_key)
@@ -361,36 +407,53 @@ class LicenseManager:
             return False
 
     def check_current_authorization(self) -> bool:
-        """
-        Check authorization using the online record first.
-
-        If the network is temporarily unavailable, use the last
-        known-good signed authorization record.
-        """
+        """Check current server authorization, falling back to a valid cache."""
         record = self.fetch_online_authorization()
 
-        if record is not None:
-            if is_authorized(record):
+        if record is not None and is_authorized(record):
+            if permanent_key_matches(
+                record.get("mode"),
+                bool(record.get("authorized")),
+            ):
+                self._authorized = True
                 try:
                     save_cached_authorization(record)
                 except Exception:
                     pass
+                return True
 
+            local_key = get_local_temp_key()
+
+            if temporary_key_matches(record, local_key):
                 self._authorized = True
+                try:
+                    save_cached_authorization(record)
+                except Exception:
+                    pass
                 return True
 
             self._authorized = False
             return False
 
-        # Network unavailable: use the last verified authorization record.
         cached = get_cached_authorization()
 
         if cached is not None and is_authorized(cached):
-            self._authorized = True
-            return True
+            if permanent_key_matches(
+                cached.get("mode"),
+                bool(cached.get("authorized")),
+            ):
+                self._authorized = True
+                return True
+
+            local_key = get_local_temp_key()
+
+            if temporary_key_matches(cached, local_key):
+                self._authorized = True
+                return True
 
         self._authorized = False
         return False
+
 
     def request_key(self) -> str | None:
         """Ask the user for an authorization key."""
@@ -511,10 +574,10 @@ class LicenseManager:
 
     def ensure_authorized(self) -> bool:
         """
-        Check the live authorization first.
+        Check live server authorization first.
 
-        The cached authorization is trusted only when the online
-        authorization service cannot be reached.
+        The cached signed assertion is used only when the server
+        cannot be reached.
         """
         if self._authorized:
             return True
@@ -527,20 +590,60 @@ class LicenseManager:
 
         if online_available:
             if record is not None and is_authorized(record):
-                try:
-                    save_cached_authorization(record)
-                except Exception:
-                    pass
+                mode = record.get("mode")
 
-                self._authorized = True
-                return True
+                if permanent_key_matches(
+                    mode,
+                    bool(record.get("authorized")),
+                ):
+                    try:
+                        save_cached_authorization(record)
+                    except Exception:
+                        pass
+
+                    self._authorized = True
+                    return True
+
+                if mode == "temporary":
+                    local_key = get_local_temp_key()
+
+                    if temporary_key_matches(record, local_key):
+                        try:
+                            save_cached_authorization(record)
+                        except Exception:
+                            pass
+
+                        self._authorized = True
+                        return True
 
             self._authorized = False
+
         else:
             cached = get_cached_authorization()
 
             if cached is not None and is_authorized(cached):
-                self._authorized = True
+                mode = cached.get("mode")
+
+                if permanent_key_matches(
+                    mode,
+                    bool(cached.get("authorized")),
+                ):
+                    self._authorized = True
+                    return True
+
+                if mode == "temporary":
+                    local_key = get_local_temp_key()
+
+                    if temporary_key_matches(cached, local_key):
+                        self._authorized = True
+                        return True
+
+        # If the server is reachable but /status says a license is required,
+        # silently revalidate the saved temporary key before prompting the user.
+        saved_key = get_local_temp_key()
+
+        if saved_key:
+            if self.authorize_with_key(saved_key):
                 return True
 
         entered_key = self.request_key()
@@ -548,28 +651,4 @@ class LicenseManager:
         if not entered_key:
             return False
 
-        record, online_available = self._fetch_online_authorization_responsive()
-
-        if not online_available or record is None:
-            return False
-
-        if not verify_signed_authorization(record):
-            return False
-
-        online_key = record.get("authorization_key")
-
-        if not isinstance(online_key, str):
-            return False
-
-        if _normalize_key(entered_key) != _normalize_key(online_key):
-            return False
-
-        save_local_temp_key(entered_key)
-
-        try:
-            save_cached_authorization(record)
-        except Exception:
-            pass
-
-        self._authorized = True
-        return True
+        return self.authorize_with_key(entered_key)
