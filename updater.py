@@ -18,7 +18,7 @@ from app_version import APP_VERSION
 
 
 GITHUB_OWNER = "tvnt04"
-GITHUB_REPO = "DisplayXStudio"
+GITHUB_REPO = "DXS-Releases"
 
 RELEASES_API_URL = (
     f"https://api.github.com/repos/"
