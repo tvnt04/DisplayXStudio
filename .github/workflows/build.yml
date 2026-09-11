@@ -327,6 +327,8 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          repository: tvnt04/DXS-Releases
+          token: ${{ secrets.DXS_RELEASE_TOKEN }}
           tag_name: ${{ github.ref_name }}
           generate_release_notes: true
           files: |
