@@ -719,6 +719,11 @@ class MainApp(QMainWindow):
 
     def ensure_data_access_authorized(self):
         """Check startup authorization, then authorize an entered key if needed."""
+        if self.license_manager.is_session_bypass_authorized():
+            self._authorization_result = True
+            self.license_manager._authorized = True
+            return True
+
         if not self._authorization_ready:
             loop = QEventLoop()
 
