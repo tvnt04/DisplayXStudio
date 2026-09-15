@@ -47,20 +47,31 @@ def _start_detached(
 ) -> None:
     """Start a process independently of the current GUI process."""
 
-    kwargs = {
-        "start_new_session": True,
-        "stdin": subprocess.DEVNULL,
-        "stdout": stdout if stdout is not None else subprocess.DEVNULL,
-        "stderr": stderr if stderr is not None else subprocess.DEVNULL,
-    }
-
     if platform.system() == "Windows":
-        kwargs["creationflags"] = (
+        creationflags = (
             subprocess.CREATE_NEW_PROCESS_GROUP
             | subprocess.DETACHED_PROCESS
+            | subprocess.CREATE_NO_WINDOW
         )
 
-    subprocess.Popen(command, **kwargs)
+        subprocess.Popen(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=stdout if stdout is not None else subprocess.DEVNULL,
+            stderr=stderr if stderr is not None else subprocess.DEVNULL,
+            creationflags=creationflags,
+            close_fds=True,
+        )
+        return
+
+    subprocess.Popen(
+        command,
+        start_new_session=True,
+        stdin=subprocess.DEVNULL,
+        stdout=stdout if stdout is not None else subprocess.DEVNULL,
+        stderr=stderr if stderr is not None else subprocess.DEVNULL,
+        close_fds=True,
+    )
 
 
 def install_appimage_update(downloaded_path: str | Path) -> None:
