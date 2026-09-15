@@ -242,20 +242,20 @@ def install_windows_installer_update(
     script = r'''
 param(
     [string]$Installer,
-    [int]$Pid,
+    [int]$ProcessId,
     [string]$LogFile
 )
 
 "========================================" | Out-File $LogFile -Append
 "Display X Studio Windows installer updater" | Out-File $LogFile -Append
 "INSTALLER=$Installer" | Out-File $LogFile -Append
-"PID=$Pid" | Out-File $LogFile -Append
+"PID=$ProcessId" | Out-File $LogFile -Append
 "========================================" | Out-File $LogFile -Append
 
 "Waiting for Display X Studio to exit..." | Out-File $LogFile -Append
 
 try {
-    Wait-Process -Id $Pid -Timeout 60 -ErrorAction Stop
+    Wait-Process -Id $ProcessId -Timeout 60 -ErrorAction Stop
 }
 catch {
     # The process normally exits, so this is expected.
