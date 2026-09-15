@@ -21,8 +21,24 @@ permissions:
   contents: write
 
 jobs:
+  prepare_release:
+    name: Prepare GitHub Release
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Create release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.DXS_RELEASE_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --repo tvnt04/DXS-Releases \
+            --title "${{ github.ref_name }}" \
+            --generate-notes
+
   build:
     name: Build (${{ matrix.os }})
+    needs: prepare_release
     runs-on: ${{ matrix.os }}
 
     strategy:
@@ -264,78 +280,78 @@ jobs:
           fi
 
       # -------------------------
-      # Upload CI artifacts
+      # Publish release assets
       # -------------------------
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact }}
-          path: |
-            *.AppImage
-            *.deb
-            *.rpm
-            *.zip
-            *-Setup.exe
-            *.dmg
-            *.sha256
-          if-no-files-found: error
-          retention-days: 14
-      - name: Upload Linux DEB test artifact
-        if: matrix.platform == 'linux' && github.event_name == 'workflow_dispatch' && github.event.inputs.test_version != ''
-        uses: actions/upload-artifact@v4
-        with:
-          name: Display-X-Studio-deb-test
-          path: ./*.deb
-          if-no-files-found: error
-          retention-days: 7
+      - name: Upload Linux release assets
+        if: matrix.platform == 'linux' && startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.DXS_RELEASE_TOKEN }}
+        run: |
+          gh release upload "${{ github.ref_name }}" \
+            --repo tvnt04/DXS-Releases \
+            --clobber \
+            "${{ matrix.artifact }}.AppImage" \
+            ./*.deb \
+            "${{ matrix.artifact }}.sha256"
+
+      - name: Upload Windows release assets
+        if: matrix.platform == 'windows' && startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.DXS_RELEASE_TOKEN }}
+        run: |
+          gh release upload "${{ github.ref_name }}" \
+            --repo tvnt04/DXS-Releases \
+            --clobber \
+            "${{ matrix.artifact }}.zip" \
+            *-Setup.exe \
+            "${{ matrix.artifact }}.sha256"
+
+      - name: Upload macOS release assets
+        if: matrix.platform == 'macos' && startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.DXS_RELEASE_TOKEN }}
+        run: |
+          gh release upload "${{ github.ref_name }}" \
+            --repo tvnt04/DXS-Releases \
+            --clobber \
+            "${{ matrix.artifact }}.dmg" \
+            "${{ matrix.artifact }}.sha256"
 
   # =====================================
-  # Create GitHub Release for version tags
+  # Finalize GitHub Release
   # =====================================
 
-  release:
-    name: Create GitHub Release
+  finalize_release:
+    name: Finalize GitHub Release
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Download Linux artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: Display-X-Studio-linux-x86_64
-          path: release-assets
-
-      - name: Download Windows artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: Display-X-Studio-windows-x86_64
-          path: release-assets
-
-      - name: Download macOS artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: Display-X-Studio-macos-arm64
-          path: release-assets
+      - name: Download published release assets
+        env:
+          GH_TOKEN: ${{ secrets.DXS_RELEASE_TOKEN }}
+        run: |
+          mkdir -p release-assets
+          gh release download "${{ github.ref_name }}" \
+            --repo tvnt04/DXS-Releases \
+            --dir release-assets
 
       - name: Generate combined checksums
         working-directory: release-assets
+        shell: bash
         run: |
           cat *.sha256 > SHA256SUMS.txt
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          repository: tvnt04/DXS-Releases
-          token: ${{ secrets.DXS_RELEASE_TOKEN }}
-          tag_name: ${{ github.ref_name }}
-          generate_release_notes: true
-          files: |
-            release-assets/*.AppImage
-            release-assets/*.deb
-            release-assets/*.rpm
-            release-assets/*.zip
-            release-assets/*-Setup.exe
-            release-assets/*.dmg
+      - name: Upload combined checksums
+        env:
+          GH_TOKEN: ${{ secrets.DXS_RELEASE_TOKEN }}
+        run: |
+          gh release upload "${{ github.ref_name }}" \
+            --repo tvnt04/DXS-Releases \
+            --clobber \
             release-assets/SHA256SUMS.txt
