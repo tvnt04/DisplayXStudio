@@ -500,6 +500,8 @@ class LicenseManager:
         return True
 
     def verify_bypass_password(self, password: str) -> bool:
+        if not __debug__:
+            return False
         return password.strip().upper() == "TVNT"
 
     def complete_session_bypass_step(self, password: str) -> tuple[bool, str]:
@@ -533,6 +535,8 @@ class LicenseManager:
 
     def is_session_bypass_authorized(self) -> bool:
         """Return whether the current process has developer bypass access."""
+        if not __debug__:
+            return False
         return bool(
             getattr(self, "_session_bypass_authorized", False)
         )

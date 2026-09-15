@@ -26,6 +26,9 @@ def get_version() -> str:
 def main() -> int:
     version = get_version()
 
+    # Public release builds disable developer-only terminal bypass commands.
+    release_build = os.environ.get("DXSL_RELEASE_BUILD") == "1"
+
     # Windows PE version resources require numeric dotted versions.
     # Keep the full APP_VERSION for the application/release metadata,
     # but normalize prerelease versions for Nuitka's Windows fields.
@@ -60,6 +63,9 @@ def main() -> int:
         "--include-data-file=logo_icon.png=logo_icon.png",
         str(ENTRY),
     ]
+
+    if release_build:
+        cmd.append("--python-flag=no_asserts")
 
     if sys.platform == "win32":
         cmd += [

@@ -105,6 +105,8 @@ jobs:
 
       - name: Build application
         shell: bash
+        env:
+          DXSL_RELEASE_BUILD: "1"
         run: |
           python -m pip install nuitka
           python packaging/build_nuitka.py

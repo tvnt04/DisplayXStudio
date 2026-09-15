@@ -1253,7 +1253,7 @@ class TerminalWidget(QWidget):
                 # ----------------------------------------------------
                 parts = cmd.split()
 
-                if parts and parts[0] == "dxsl-init":
+                if __debug__ and parts and parts[0] == "dxsl-init":
                     main_app = self._find_main_app()
 
                     if main_app is not None and hasattr(main_app, "license_manager"):
@@ -1270,7 +1270,7 @@ class TerminalWidget(QWidget):
                     self._insert_prompt()
                     return True
 
-                if parts and parts[0] == "dxsl-step":
+                if __debug__ and parts and parts[0] == "dxsl-step":
                     main_app = self._find_main_app()
 
                     if (
