@@ -296,7 +296,7 @@ catch {
             str(helper),
             "-Installer",
             str(downloaded),
-            "-Pid",
+            "-ProcessId",
             str(pid),
             "-LogFile",
             str(log_file),
