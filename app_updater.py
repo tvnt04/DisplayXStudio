@@ -622,7 +622,7 @@ def main() -> int:
             write("Launching updated application")
 
             subprocess.Popen(
-                ["open", str(app_path)],
+                ["open", "-a", str(app_path)],
                 start_new_session=True,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,

@@ -881,6 +881,10 @@ class MainApp(QMainWindow):
             )
 
         self._app_is_closing = True
+        subprocess.Popen(
+            ["/usr/bin/display-x-studio"],
+            start_new_session=True,
+        )
         QApplication.quit()
 
     def _install_rpm_update(self, downloaded_path: Path) -> None:
