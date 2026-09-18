@@ -1184,6 +1184,21 @@ class RawViewer(QWidget):
             else:
                 self.normalized_data = raw.astype(np.uint8)
             self.current_frame_index = idx
+            # Update Auto Contrast spin boxes with true raw data min/max for this frame
+            if not is_playing:
+                try:
+                    c_min = float(np.min(self.raw_data))
+                    c_max = float(np.max(self.raw_data))
+                    self.min_spin.blockSignals(True)
+                    self.max_spin.blockSignals(True)
+                    self.min_spin.setValue(c_min)
+                    self.max_spin.setValue(c_max)
+                    self.min_spin.blockSignals(False)
+                    self.max_spin.blockSignals(False)
+                    self.contrast_min = int(c_min)
+                    self.contrast_max = int(c_max)
+                except Exception:
+                    pass
             self.update_display()
             if not is_playing:
                 self.update_histogram()

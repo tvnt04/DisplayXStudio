@@ -1636,11 +1636,22 @@ class HistogramViewer(QWidget):
             self._y_display_max = max(1.0, float(max(y_max, prev * 0.92)))
             mode_str = 'Frames' if self.frame_mode.lower().startswith('range') else 'Single Frame'
             self.set_histograms(payload, f"Histogram - {mode_str} ({processed}/{total})")
+            # Use true worker min/max if available, otherwise fall back to bin-edge values
             if range_min is not None and range_max is not None:
-                self.min_val = int(range_min)
-                self.max_val = int(range_max)
+                # Only update min_val/max_val if not already set by caller (e.g. _on_range_finished)
+                if getattr(self, 'min_val', None) is None or self.min_val == 0:
+                    self.min_val = int(range_min)
+                if getattr(self, 'max_val', None) is None or self.max_val == 0:
+                    self.max_val = int(range_max)
                 self._set_frame_set_minmax(self.min_val, self.max_val)
                 self.minmax_updated.emit(self.min_val, self.max_val)
+            # Override bin-edge-derived min/max with true values
+            if self.min_val is not None and self.max_val is not None:
+                self._overall_minmax = (self.min_val, self.max_val)
+                for key in bins_dict:
+                    if key in self._band_minmax:
+                        self._band_minmax[key] = (self.min_val, self.max_val)
+                self._update_minmax_labels()
             self.plot.setYRange(0, self._y_display_max * 1.05, padding=0)
 
             pct = int((processed / float(max(1, total))) * 100)
@@ -1710,6 +1721,14 @@ class HistogramViewer(QWidget):
             })
 
         self.set_histograms(payload, f"Histogram - {frame_mode_str} (Range: {self.min_val}-{self.max_val})")
+        # Override bin-edge-derived min/max with true data min/max from worker
+        for key, result_tuple in key_to_result.items():
+            if len(result_tuple) == 6:
+                _hist, gmin, gmax, count, _sum_val, _sum_sq = result_tuple
+                if count > 0 and gmin is not None and gmax is not None:
+                    self._band_minmax[key] = (int(gmin), int(gmax))
+        self._overall_minmax = (self.min_val, self.max_val)
+        self._update_minmax_labels()
         self._set_frame_set_minmax(self.min_val, self.max_val)
         self.minmax_updated.emit(self.min_val, self.max_val)
         self.hist_progress.hide()

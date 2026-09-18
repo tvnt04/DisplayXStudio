@@ -66,6 +66,8 @@ class ToolboxButton(QToolButton):
             return super().setText(text)
         return
 class MagnifierGraphicsView(QGraphicsView):
+    grid_state_changed = pyqtSignal(bool)  # emitted when grid_enabled changes externally (e.g. right-click)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         
@@ -718,6 +720,7 @@ class MagnifierGraphicsView(QGraphicsView):
                 self.grid_enabled = True
                 self.grid_divisions = max(1, self.grid_divisions)
                 self._sync_grid_spacing()
+                self.grid_state_changed.emit(True)
                 self.viewport().update()
                 event.accept()
                 return
@@ -1843,6 +1846,7 @@ class GraphicsImageViewer(QWidget):
         """)
         self.grid_btn.show()
         self.grid_btn.raise_()
+        self.graphics_view.grid_state_changed.connect(self._sync_grid_btn)
         self.fs_btn = QPushButton("⛶", self.graphics_view.viewport())
         self.fs_btn.setFixedSize(40, 40)
         self.fs_btn.setToolTip("Toggle fullscreen")
@@ -3179,6 +3183,14 @@ class GraphicsImageViewer(QWidget):
         try:
             self.graphics_view.toggle_grid(checked)
             self._reposition_fs_btn()
+        except Exception:
+            pass
+    def _sync_grid_btn(self, checked):
+        """Sync grid button checked state when grid is toggled externally (e.g. right-click)."""
+        try:
+            self.grid_btn.blockSignals(True)
+            self.grid_btn.setChecked(checked)
+            self.grid_btn.blockSignals(False)
         except Exception:
             pass
     def eventFilter(self, obj, event):
