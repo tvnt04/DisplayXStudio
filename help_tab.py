@@ -37,7 +37,6 @@ _MODE_BODIES = {
 <h4>Top / Global Controls</h4>
 <ul>
   <li><strong>+</strong> — Add new dataset (create new dataset tab).</li>
-  <li><strong>Add Live Tab</strong> — Open live-streaming tab (connects to device/watched folder).</li>
   <li><strong>Theme (sun icon)</strong> — Toggle light / dark UI theme.</li>
 </ul>
 
@@ -105,8 +104,8 @@ _MODE_BODIES = {
   <li><strong>Zoom In</strong> — Step zoom in.</li>
   <li><strong>Mouse Zoom (toggle)</strong> — Enable/disable Ctrl+scroll wheel zoom; affects all tabs.</li>
   <li><strong>Grid (toggle)</strong> — Show overlay grid with interactive positioning.</li>
-  <li><strong>Measure (toggle)</strong> — Click 2 points to measure distance and coordinates.</li>
-  <li><strong>Calculate (toggle)</strong> — Drag rectangle to get region statistics (mean, median, stddev).</li>
+  <li><strong>Spatial Ruler (toggle)</strong> — Click 2 points to measure linear pixel distance, coordinates, and physical ground distance.</li>
+  <li><strong>ROI Statistics (toggle)</strong> — Drag a bounding box to compute Region-Of-Interest radiometric statistics (Mean, Variance, StdDev, Min/Max DN).</li>
   <li><strong>Flip (cycles Off → Select → All)</strong> — Apply horizontal/vertical flip; Select = individual tile, All = global.</li>
   <li><strong>Rotate (cycles 0° → 90° → 180° → 270°)</strong> — Rotate display (non-destructive, view-only).</li>
 </ul>
@@ -194,8 +193,8 @@ _MODE_BODIES = {
   <li><strong>Zoom In / Out / Reset</strong> — Scale controls.</li>
   <li><strong>Mouse Zoom</strong> — Ctrl+scroll wheel zoom toggle.</li>
   <li><strong>Grid</strong> — Display interactive overlay grid.</li>
-  <li><strong>Measure</strong> — Click 2 points to measure distance &amp; coordinates.</li>
-  <li><strong>Calculate</strong> — Drag rectangle for region statistics.</li>
+  <li><strong>Spatial Ruler</strong> — Click 2 points to measure distance &amp; coordinates.</li>
+  <li><strong>ROI Statistics</strong> — Drag rectangle for Region-Of-Interest radiometric statistics.</li>
   <li><strong>Flip</strong> — Horizontal/vertical mirroring.</li>
   <li><strong>Rotate</strong> — Rotate display 0°/90°/180°/270°.</li>
 </ul>

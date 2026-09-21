@@ -5,10 +5,11 @@ from PyQt5.QtWidgets import (
     QTabWidget, QLabel, QPushButton, QSpinBox, QComboBox, QCheckBox, QToolButton,
     QRadioButton, QGroupBox, QScrollArea, QTextEdit, QSlider, QLineEdit,
     QFileDialog, QMessageBox, QDoubleSpinBox, QFormLayout, QTabBar, QButtonGroup, QTreeWidget, QTreeWidgetItem,
-    QGraphicsDropShadowEffect, QGraphicsItemGroup, QMenu, QGraphicsEllipseItem, QGraphicsLineItem, QGraphicsRectItem, QGraphicsTextItem
+    QGraphicsDropShadowEffect, QGraphicsItemGroup, QMenu, QGraphicsEllipseItem, QGraphicsLineItem, QGraphicsRectItem, QGraphicsTextItem,
+    QColorDialog
 )
 from PyQt5.QtCore import Qt, QTimer, QRect, QRectF, QPoint, QPointF, QProcess, pyqtSignal, QPropertyAnimation, QEvent, QBuffer, QByteArray, QSize
-from PyQt5.QtGui import QImage, QPixmap, QPainter, QPainterPath,QPen,QCursor,QColor,QTextCursor,QKeySequence,QTransform, QPalette, QIcon, QFont
+from PyQt5.QtGui import QImage, QPixmap, QPainter, QPainterPath,QPen,QCursor,QColor,QTextCursor,QKeySequence,QTransform, QPalette, QIcon, QFont, QBrush
 import math
 import platform
 from PIL import Image
@@ -70,7 +71,7 @@ class MagnifierGraphicsView(QGraphicsView):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        
+
         if platform.system() == 'Darwin':
             self.setAttribute(Qt.WA_MacMetalStyle, True)
         self.magnifier_enabled = False
@@ -124,7 +125,7 @@ class MagnifierGraphicsView(QGraphicsView):
         self.grid_drag_start_orig = None
         self.grid_drag_start_spacing = 0.0
         self.grid_line_pick_tolerance = 6
-        
+
         # Mouse click mode line
         self.mouse_click_line_enabled = False
         self.mouse_click_line_pos = None  # QPointF for current mouse position
@@ -136,7 +137,7 @@ class MagnifierGraphicsView(QGraphicsView):
         self.crop_box_drag_mode = None
         self.crop_box_drag_start = None
         self.crop_box_initial = None
-        
+
         # === Annotation Layer ===
         self.annotations = []  # List of annotation dicts: {"type": "arrow"|"text"|"rect"|"measure", "points": [...], "color": ..., "text": ...}
         self.annotations_visible = True
@@ -633,11 +634,11 @@ class MagnifierGraphicsView(QGraphicsView):
             # --- Flip system ---
             flip_mode = getattr(self.parent(), "flip_mode", 0)
             if flip_mode in (1, 2): # 1=Select, 2=Select All
-                
+
                 menu = QMenu(self)
                 act_v = menu.addAction("Flip Vertical")
                 act_h = menu.addAction("Flip Horizontal")
-            
+
                 act_global_v = None
                 act_global_h = None
                 if flip_mode == 2: # Only add global options in "Select All" mode
@@ -654,7 +655,7 @@ class MagnifierGraphicsView(QGraphicsView):
                 if vertical or horizontal:
                     self.parent().apply_flip(vertical=vertical, horizontal=horizontal, all=all_flag, click_pos=(x, y), global_flip=is_global)
                     return # stop here so magnifier logic doesn’t also run
-            
+
             # --- Magnifier logic (only interaction, no auto-set on left click) ---
             if self.magnifier_enabled:
                 # Get visual center for interaction
@@ -677,7 +678,7 @@ class MagnifierGraphicsView(QGraphicsView):
                     self.drag_offset = mouse_view - center_view
                     event.accept()
                     return
-            
+
             if (self.measure_enabled and self.calculate_enabled):
                 # Defer decision until movement or release.
                 self.pending_interaction = 'undecided'
@@ -712,7 +713,7 @@ class MagnifierGraphicsView(QGraphicsView):
                 self.viewport().update()
                 event.accept()
                 return
-        
+
         elif event.button() == Qt.RightButton:
             mouse_scene = self.mapToScene(event.pos())
             local_x, local_y = self.parent().get_original_coords(mouse_scene)
@@ -749,7 +750,7 @@ class MagnifierGraphicsView(QGraphicsView):
                 self.cached_source_scene = None
                 self.viewport().update()
             x, y = math.floor(local_x), math.floor(local_y)
-        
+
         elif event.button() == Qt.MiddleButton:
             self.pan_start_pos = event.globalPos()
             self.setCursor(Qt.ClosedHandCursor)
@@ -766,19 +767,19 @@ class MagnifierGraphicsView(QGraphicsView):
         super().mouseDoubleClickEvent(event)
 
     def mouseMoveEvent(self, event):
-        
+
         current_time = time() * 1000
         if current_time - self.last_update_time < self.update_interval and not self.calculate_drag_active:
             return
         mouse_scene = self.mapToScene(event.pos())
         image_x, image_y = self.parent().get_original_coords(mouse_scene)
         inside_image = getattr(self.parent(), '_last_point_within_image', False)
-        
+
         # Update mouse click line position
         if self.mouse_click_line_enabled:
             self.mouse_click_line_pos = QPointF(image_x, image_y)
             self.viewport().update()
-        
+
         if self.crop_box_enabled and self.crop_box_drag_mode and (event.buttons() & Qt.LeftButton):
             self._update_crop_box_drag(image_x, image_y)
             self.setCursor(self._cursor_for_crop_hit(self.crop_box_drag_mode))
@@ -977,36 +978,36 @@ class MagnifierGraphicsView(QGraphicsView):
             # Get float bounds from original coordinates
             ox1, oy1 = self.parent().get_original_coords(p1)
             ox2, oy2 = self.parent().get_original_coords(p2)
-            
+
             # Convert to integer indices using floor for min and ceil for max
             x0 = int(math.floor(min(ox1, ox2)))
             x1 = int(math.ceil(max(ox1, ox2)))
             y0 = int(math.floor(min(oy1, oy2)))
             y1 = int(math.ceil(max(oy1, oy2)))
-            
+
             fw = int(getattr(self.parent(), "full_width", 0))
             fh = int(getattr(self.parent(), "full_height", 0))
             if fw <= 0 or fh <= 0:
                 return
-            
+
             # Clamp to image bounds
             x0 = max(0, min(fw, x0))
             x1 = max(0, min(fw, x1))
             y0 = max(0, min(fh, y0))
             y1 = max(0, min(fh, y1))
-            
+
             if x1 <= x0 or y1 <= y0:
                 return
-            
+
             data_src = self.parent().original_raw_data if getattr(self.parent(), "original_raw_data", None) is not None else self.parent().original_image_data
             if data_src is None:
                 return
-            
+
             # Use half-open interval [y0:y1, x0:x1)
             roi = data_src[y0:y1, x0:x1]
             if roi is None or getattr(roi, "size", 0) == 0:
                 return
-            
+
             roi_f = roi.astype(np.float64, copy=False).ravel()
             mean_val = float(np.mean(roi_f))
             var_val = float(np.var(roi_f))
@@ -1288,7 +1289,7 @@ class MagnifierGraphicsView(QGraphicsView):
                     painter.setPen(pen)
                     painter.drawLine(QPointF(center_view.x() - 10, center_view.y()), QPointF(center_view.x() + 10, center_view.y()))
                     painter.drawLine(QPointF(center_view.x(), center_view.y() - 10), QPointF(center_view.x(), center_view.y() + 10))
-        
+
             finally:
                 painter.end()
         if self.measure_enabled:
@@ -1331,7 +1332,7 @@ class MagnifierGraphicsView(QGraphicsView):
                     painter.drawLine(o_view, p2_view)
             finally:
                 painter.end()
-        
+
         if self.calculate_enabled:
             painter = QPainter(self.viewport())
             try:
@@ -1366,13 +1367,13 @@ class MagnifierGraphicsView(QGraphicsView):
                 line_color = QColor(255, 0, 255, 255)  # Magenta with full alpha
                 pen = QPen(line_color, 4, Qt.DashLine)  # Thicker line
                 painter.setPen(pen)
-                
+
                 # Convert image coordinates to view coordinates
                 line_scene = self.parent().map_original_to_scene(
                     self.mouse_click_line_pos.x(), self.mouse_click_line_pos.y()
                 )
                 line_view = self.mapFromScene(line_scene)
-                
+
                 if self.mouse_click_line_direction == "vertical":
                     painter.drawLine(
                         QPointF(line_view.x(), 0),
@@ -1409,7 +1410,7 @@ class MagnifierGraphicsView(QGraphicsView):
                     )
             finally:
                 painter.end()
-        
+
         # === Draw Annotations ===
         if self.annotations and self.annotations_visible:
             painter = QPainter(self.viewport())
@@ -1419,33 +1420,33 @@ class MagnifierGraphicsView(QGraphicsView):
                     self.draw_annotation(painter, ann)
             finally:
                 painter.end()
-    
+
     # ============ Annotation Layer ============
     def add_annotation(self, annotation_dict):
         """Add annotation: {"type": "arrow"|"text"|"rect"|"measure", "p1": ..., "p2": ..., "color": ..., "text": ...}"""
         self.annotations.append(annotation_dict)
         self.viewport().update()
-    
+
     def clear_annotations(self):
         """Clear all annotations."""
         self.annotations = []
         self.viewport().update()
-    
+
     def toggle_annotations(self):
         """Toggle annotation visibility."""
         self.annotations_visible = not self.annotations_visible
         self.viewport().update()
-    
+
     def draw_annotation(self, painter, ann):
         """Draw a single annotation on the painter."""
         if not self.annotations_visible or not ann:
             return
-        
+
         ann_type = ann.get("type", "arrow")
         color = QColor(ann.get("color", "#FF0000"))
         pen = QPen(color, self.annotation_pen_width)
         painter.setPen(pen)
-        
+
         try:
             if ann_type == "arrow":
                 # Draw line with arrowhead
@@ -1461,11 +1462,11 @@ class MagnifierGraphicsView(QGraphicsView):
                                p2.y() - arrow_size * math.sin(angle + math.pi / 6))
                 painter.drawLine(p2, p2_1)
                 painter.drawLine(p2, p2_2)
-            
+
             elif ann_type == "rect":
                 rect = QRectF(ann.get("rect", QRectF(0, 0, 50, 50)))
                 painter.drawRect(rect)
-            
+
             elif ann_type == "measure":
                 # Line with distance text
                 p1 = ann.get("p1", QPointF(0, 0))
@@ -1477,7 +1478,7 @@ class MagnifierGraphicsView(QGraphicsView):
                 font.setPointSize(8)
                 painter.setFont(font)
                 painter.drawText(int(mid.x()), int(mid.y()), f"{dist:.1f}px")
-            
+
             elif ann_type == "text":
                 font = QFont()
                 font.setPointSize(10)
@@ -1487,7 +1488,7 @@ class MagnifierGraphicsView(QGraphicsView):
                 painter.drawText(int(pos.x()), int(pos.y()), text)
         except Exception:
             pass  # Silently skip malformed annotations
-    
+
     def save_annotations_json(self, filepath):
         """Save annotations to JSON file (JSON-serializable dicts)."""
         try:
@@ -1509,7 +1510,7 @@ class MagnifierGraphicsView(QGraphicsView):
                 json.dump(serializable, f, indent=2)
         except Exception as e:
             print(f"Failed to save annotations: {e}")
-    
+
     def load_annotations_json(self, filepath):
         """Load annotations from JSON file."""
         try:
@@ -1557,7 +1558,7 @@ class GraphicsImageViewer(QWidget):
         self.frame_group = None
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 0, 0, 10)
-      
+
         # Control bar
         control_bar = QHBoxLayout()
         layout.addLayout(control_bar)
@@ -1573,7 +1574,7 @@ class GraphicsImageViewer(QWidget):
         self.graphics_view.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         layout.addWidget(self.graphics_view)
         self.mouse_zoom_enabled = False # toggled by Mouse Zoom checkbox
-       
+
         self.bottom_bar_widget = QWidget(self)
         self.bottom_bar_widget.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         bottom_bar = QHBoxLayout(self.bottom_bar_widget)
@@ -1581,13 +1582,13 @@ class GraphicsImageViewer(QWidget):
         self._bottom_layout = bottom_bar
         bottom_bar.addStretch()
 
-        
+
         self.interaction_modes = ["off", "measure", "calculate"]
         self.interaction_mode_labels = {
             "off": "Off",
-            "measure": "Measure",
-            "calculate": "Calculate",
-            "both": "Measure+Calc",
+            "measure": "Spatial Ruler",
+            "calculate": "ROI Stats",
+            "both": "Ruler + Stats",
         }
         self.interaction_mode_styles = {
             "off": "background-color: #E57373; color: white;",
@@ -1626,10 +1627,10 @@ class GraphicsImageViewer(QWidget):
             except Exception:
                 pass
 
-        
+
         self.toolbox_btn = ToolboxButton()
         self.toolbox_btn.set_internal_text("Toolbox")
-        self.toolbox_btn.setToolTip("Toolbox: choose Measure and/or Calculate")
+        self.toolbox_btn.setToolTip("Toolbox: choose Spatial Ruler and/or ROI Statistics")
         self.toolbox_btn.setStyleSheet(self.interaction_mode_styles['off'])
         bottom_bar.addWidget(self.toolbox_btn)
         # status label next to toolbox showing current selection
@@ -1639,9 +1640,11 @@ class GraphicsImageViewer(QWidget):
         # Backwards compatibility: some external code references `measure_mode_btn`
         self.measure_mode_btn = self.toolbox_btn
         self.toolbox_menu = QMenu(self)
-        self.action_measure = self.toolbox_menu.addAction("Measure")
+        self.action_measure = self.toolbox_menu.addAction("Spatial Ruler 📏")
+        self.action_measure.setToolTip("Click 2 points to measure spatial/ground distance and bearing")
         self.action_measure.setCheckable(True)
-        self.action_calculate = self.toolbox_menu.addAction("Calculate")
+        self.action_calculate = self.toolbox_menu.addAction("ROI Statistics 📊")
+        self.action_calculate.setToolTip("Drag a rectangle to compute region-of-interest radiometric statistics")
         self.action_calculate.setCheckable(True)
 
         def _on_tool_toggled(tool, checked):
@@ -1652,7 +1655,7 @@ class GraphicsImageViewer(QWidget):
                         QMessageBox.warning(
                             self,
                             "Feature Locked",
-                            "Magnifier is active. Please disable it to use the Toolbox features (Measure/Calculate)."
+                            "Magnifier is active. Please disable it to use the Toolbox features (Spatial Ruler / ROI Statistics)."
                         )
                         action = self.action_measure if tool == 'measure' else self.action_calculate
                         action.blockSignals(True)
@@ -1686,7 +1689,7 @@ class GraphicsImageViewer(QWidget):
         self.toolbox_btn.clicked.connect(_show_tool_menu)
         _apply_interaction_mode("off")
         self.magnifier_toggle = QCheckBox("Magnifier")
-        bottom_bar.addWidget(self.magnifier_toggle)    
+        bottom_bar.addWidget(self.magnifier_toggle)
         self.torch_toggle = QCheckBox("Torch")
         bottom_bar.addWidget(self.torch_toggle)
         self.torch_toggle.setChecked(False)
@@ -1700,7 +1703,7 @@ class GraphicsImageViewer(QWidget):
                     QMessageBox.warning(
                         self,
                         "Feature Locked",
-                        "Toolbox feature (Measure/Calculate) is active. Please disable it to use the Magnifier."
+                        "Toolbox feature (Spatial Ruler / ROI Statistics) is active. Please disable it to use the Magnifier."
                     )
                     self.magnifier_toggle.blockSignals(True)
                     self.magnifier_toggle.setChecked(False)
@@ -1855,6 +1858,60 @@ class GraphicsImageViewer(QWidget):
         self.fs_btn.show()
         self.fs_btn.raise_()
         self._fs_margin = self._overlay_btn_margin
+
+        self._bg_presets = [
+            ("Black", "#000000"),
+            ("Dark Gray", "#1A1A1A"),
+            ("Gray", "#333333"),
+            ("Light Gray", "#A0A0A0"),
+            ("White", "#FFFFFF"),
+            ("Navy", "#0A1428"),
+            ("Blue Gray", "#263238"),
+            ("Dark Green", "#0D2015"),
+            ("Dark Purple", "#160C28"),
+        ]
+
+        self.bg_btn = QPushButton("", self.graphics_view.viewport())
+        self.bg_btn.setFixedSize(16, 16)
+        self.bg_btn.setToolTip("Change background color")
+        self.bg_btn.setStyleSheet("""
+            QPushButton {
+                background: rgba(0,0,0,0.7);
+                border-radius: 8px;
+                border: 2px solid rgba(255,255,255,0.7);
+            }
+            QPushButton:hover {
+                background: rgba(50,50,50,0.8);
+            }
+        """)
+        self.bg_btn.clicked.connect(self._show_bg_menu)
+        self.bg_btn.show()
+        self.bg_btn.raise_()
+        w = self.window()
+        is_dark = getattr(w, '_is_dark_mode', True)
+
+        # Always try to read from the session file directly to be absolutely bulletproof
+        from PyQt5.QtGui import QColor
+        try:
+            import json, os
+            from app_paths import get_app_data_path
+            session_file = get_app_data_path("last_session.json")
+            if os.path.exists(session_file):
+                with open(session_file, 'r') as sf:
+                    data = json.load(sf)
+                is_dark = data.get('dark_mode', True)
+                if is_dark:
+                    bg_hex = data.get('bg_color_dark', '#13191C')
+                else:
+                    bg_hex = data.get('bg_color_light', '#E0E0E0')
+                bg = QColor(bg_hex)
+            else:
+                bg = QColor("#13191C") if is_dark else QColor("#E0E0E0")
+        except Exception:
+            bg = QColor("#13191C") if is_dark else QColor("#E0E0E0")
+
+        self._set_bg_color(bg, propagate=False)
+
         QTimer.singleShot(0, self._reposition_fs_btn)
         self.graphics_view.viewport().installEventFilter(self)
         hbar = self.graphics_view.horizontalScrollBar()
@@ -2110,7 +2167,7 @@ class GraphicsImageViewer(QWidget):
                 local_y = orig_y - item.orig_y
                 return item.mapToScene(QPointF(orig_x, local_y))
             return QPointF(orig_x, orig_y)
-        
+
     def get_app(self):
         p = self
         # First try to find BandStitchProApp (has band_frames)
@@ -2118,13 +2175,13 @@ class GraphicsImageViewer(QWidget):
             p = p.parent()
         if p and hasattr(p, 'band_frames'):
             return p
-        
+
         # If not found, try to find MainApp (has tab_widget and view_tabs for editor)
         p = self
         while p and not (hasattr(p, 'tab_widget') or hasattr(p, 'view_tabs')):
             p = p.parent()
         return p
-    
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._reposition_fs_btn()
@@ -2266,7 +2323,7 @@ class GraphicsImageViewer(QWidget):
         else:
             display_y = y
         return display_x, display_y, sample_x, sample_y
-    
+
     def _apply_item_transform(self):
         if self.global_rotation == 0:
             self.pixmap_item.setTransform(QTransform())
@@ -2379,7 +2436,7 @@ class GraphicsImageViewer(QWidget):
         self.pixmap_item.setVisible(True)
         self._apply_item_transform() # Restore global if needed
 
-        
+
     def get_stitch_sequence(self):
         # Extracted logic from apply_flip
         parent_app = self.parent()
@@ -2452,7 +2509,7 @@ class GraphicsImageViewer(QWidget):
         candidates = [self, parent_app, getattr(self, "window", None), getattr(self, "main_window", None)]
         candidates.append(globals())
         try:
-            
+
             candidates.append(sys.modules.get(__name__, None))
         except Exception:
             pass
@@ -2610,7 +2667,7 @@ class GraphicsImageViewer(QWidget):
             entry['start_y'] = cur_y
             cur_y += int(entry['per_block_h']) + gap
         return stitch_sequence
-   
+
     def _split_vertical(self):
         if not self.current_pil_image or not self.is_tdi:
             return []
@@ -2881,7 +2938,7 @@ class GraphicsImageViewer(QWidget):
                 self.graphics_view.viewport().update()
         except RuntimeError:
             return
-           
+
     def zoom_in(self):
         """Zoom in around the view center."""
         self._apply_zoom(1.25)
@@ -3163,7 +3220,7 @@ class GraphicsImageViewer(QWidget):
                     y1 = logical_y1
                 flip_region_for_entry_abs_y(y0, y1, vertical, horizontal)
         self.show_image(self.current_pil_image, fit_to_screen=False)
-           
+
     def _reposition_fs_btn(self):
         """Place bottom overlay buttons in the graphics_view.viewport()."""
         try:
@@ -3177,8 +3234,100 @@ class GraphicsImageViewer(QWidget):
                 grid_y = max(0, vp.height() - self.grid_btn.height() - self._fs_margin)
                 self.grid_btn.move(grid_x, grid_y)
                 self.grid_btn.raise_()
+
+                if hasattr(self, 'bg_btn') and self.bg_btn is not None:
+                    bg_x = max(0, vp.width() - self.bg_btn.width() - self._fs_margin)
+                    bg_y = max(0, self._fs_margin)
+                    self.bg_btn.move(bg_x, bg_y)
+                    self.bg_btn.raise_()
         except Exception:
             pass
+
+    def _show_bg_menu(self):
+        menu = QMenu(self)
+
+        # Check theme
+        w = self.window()
+        is_dark = getattr(w, '_is_dark_mode', True)
+
+        if is_dark:
+            presets = [
+                ("Black", "#000000"),
+                ("Dark Gray", "#111111"),
+                ("Gray", "#222222"),
+                ("Light Gray", "#444444"),
+                ("White", "#FFFFFF"),
+                ("Navy", "#050A14"),
+                ("Blue Gray", "#13191C"),
+                ("Dark Green", "#06100A"),
+                ("Dark Purple", "#0B0614"),
+            ]
+        else:
+            presets = [
+                ("Black", "#000000"),
+                ("Dark Gray", "#888888"),
+                ("Gray", "#B0B0B0"),
+                ("Light Gray", "#E0E0E0"),
+                ("White", "#FFFFFF"),
+                ("Navy", "#6A85B9"),
+                ("Blue Gray", "#B0BEC5"),
+                ("Dark Green", "#6A9A7A"),
+                ("Dark Purple", "#9A7ABA"),
+            ]
+
+        for name, hex_code in presets:
+            color = QColor(hex_code)
+            pixmap = QPixmap(16, 16)
+            pixmap.fill(color)
+            action = menu.addAction(QIcon(pixmap), name)
+            action.triggered.connect(lambda checked, c=color: self._set_bg_color(c))
+
+        menu.addSeparator()
+        custom_action = menu.addAction("Custom... 🎨")
+        custom_action.triggered.connect(self._open_custom_bg_dialog)
+
+        # Show menu above the button
+        pos = self.bg_btn.mapToGlobal(QPoint(0, -menu.sizeHint().height()))
+        menu.exec_(pos)
+
+    def _open_custom_bg_dialog(self):
+        color = QColorDialog.getColor(self._current_bg_color, self, "Select Background Color")
+        if color.isValid():
+            self._set_bg_color(color)
+
+    def _set_bg_color(self, color: QColor, propagate=True):
+        self.graphics_view.scene().setBackgroundBrush(QBrush(color))
+        self._current_bg_color = color
+
+        # update bg_btn style to indicate current color
+        self.bg_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {color.name()};
+                border-radius: 8px;
+                border: 2px solid rgba(255,255,255,0.7);
+            }}
+            QPushButton:hover {{
+                background: rgba(50,50,50,0.8);
+            }}
+        """)
+
+        if propagate:
+            from PyQt5.QtWidgets import QApplication
+            import sys
+            app = QApplication.instance()
+            main_app = None
+            if app:
+                for widget in app.topLevelWidgets():
+                    if widget.__class__.__name__ == 'MainApp':
+                        main_app = widget
+                        break
+
+            if main_app and hasattr(main_app, 'set_global_bg_color'):
+                main_app.set_global_bg_color(color)
+                for viewer in main_app.findChildren(type(self)):
+                    if viewer is not self:
+                        viewer._set_bg_color(color, propagate=False)
+
     def _on_grid_toggled(self, checked):
         try:
             self.graphics_view.toggle_grid(checked)
@@ -3330,7 +3479,7 @@ class GraphicsImageViewer(QWidget):
                     main_window.showNormal()
             except Exception as e:
                 print(f"Error exiting fullscreen: {e}")
-       
+
     def fit_to_screen(self):
         # single, correct implementation of fit_to_screen for this viewer
         if not self.scene or not self.scene.items():
@@ -3453,7 +3602,7 @@ class GraphicsImageViewer(QWidget):
                 getattr(data_src, 'ndim', 0) == 3 and
                 data_src.shape[2] >= 3
             )
-           
+
             # Only update overlay directly if there's NO external callback
             # (For raw_mode, the callback will handle the overlay update with raw data)
             if self.pixel_info_callback is None:
@@ -3462,9 +3611,9 @@ class GraphicsImageViewer(QWidget):
                         self.pixel_info_box_overlay.update_info(int(display_x), int(display_y), values, is_rgb=is_rgb)
                     except Exception as e:
                         print(f"Error updating pixel info box overlay: {e}")
-           
+
             # Call the external callback if provided (raw_mode will update overlay with raw data)
             if self.pixel_info_callback:
                 self.pixel_info_callback(display_x, display_y, values, is_rgb)
 
-    
+

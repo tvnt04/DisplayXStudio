@@ -1024,6 +1024,57 @@ class MainApp(QMainWindow):
         if not self.isMaximized():
             QTimer.singleShot(50, self.showMaximized)
 
+
+    def set_global_bg_color(self, color):
+        if getattr(self, '_is_dark_mode', True):
+            self.bg_color_dark = color.name()
+        else:
+            self.bg_color_light = color.name()
+
+        # Save to session
+        try:
+            data = self._read_json_file(self.session_file, default={}) or {}
+            data['bg_color_dark'] = getattr(self, 'bg_color_dark', '#13191C')
+            data['bg_color_light'] = getattr(self, 'bg_color_light', '#E0E0E0')
+            self._write_json_atomic(self.session_file, data)
+        except Exception:
+            pass
+
+    def get_global_bg_color(self):
+        # ensure defaults are loaded if not set
+        if not hasattr(self, 'bg_color_dark'):
+            try:
+                data = self._read_json_file(self.session_file, default={}) or {}
+                self.bg_color_dark = data.get('bg_color_dark', '#13191C')
+                self.bg_color_light = data.get('bg_color_light', '#E0E0E0')
+                if not hasattr(self, '_is_dark_mode'):
+                    self._is_dark_mode = data.get('dark_mode', True)
+            except Exception:
+                self.bg_color_dark = '#13191C'
+                self.bg_color_light = '#E0E0E0'
+
+        from PyQt5.QtGui import QColor
+        if getattr(self, '_is_dark_mode', True):
+            return QColor(self.bg_color_dark)
+        else:
+            return QColor(self.bg_color_light)
+
+    def apply_global_bg_to_viewers(self):
+        color = self.get_global_bg_color()
+        # Instead of findChildren which might miss some deeply nested or unattached viewers,
+        # we can just use findChildren from the QApplication instance to get all of them!
+        from PyQt5.QtWidgets import QApplication
+        app = QApplication.instance()
+        if not app: return
+        for widget in app.topLevelWidgets():
+            # Actually, main app findChildren is fine if they are attached.
+            pass
+
+        from PyQt5.QtWidgets import QWidget
+        for viewer in self.findChildren(QWidget):
+            if viewer.__class__.__name__ == 'GraphicsImageViewer' and hasattr(viewer, '_set_bg_color'):
+                viewer._set_bg_color(color, propagate=False)
+
     def _on_dark_mode_toggled(self, checked: bool):
         app = QApplication.instance()
         if app is None:
@@ -1062,6 +1113,11 @@ class MainApp(QMainWindow):
         except Exception as e:
             print(f"Error saving dark mode preference: {e}")
 
+        # Apply the theme's background color to all viewers
+        if hasattr(self, 'apply_global_bg_to_viewers'):
+            self.apply_global_bg_to_viewers()
+
+
 
     def load_dark_mode(self):
         try:
@@ -1097,6 +1153,9 @@ class MainApp(QMainWindow):
                     """)
         except Exception as e:
             print(f"Error loading dark mode: {e}")
+
+        if hasattr(self, 'apply_global_bg_to_viewers'):
+            self.apply_global_bg_to_viewers()
 
     def _configure_tab_host(self, host, role: str):
         if host is None:
@@ -1302,8 +1361,11 @@ class MainApp(QMainWindow):
 
 
     def save_session(self):
+        old_data = self._read_json_file(self.session_file, default={}) or {}
         data = {
             'dark_mode': self._is_dark_mode,
+            'bg_color_dark': getattr(self, 'bg_color_dark', old_data.get('bg_color_dark', '#13191C')),
+            'bg_color_light': getattr(self, 'bg_color_light', old_data.get('bg_color_light', '#E0E0E0')),
             'modes': {
                 'band': [],
                 'raw': [],
@@ -1798,6 +1860,10 @@ class MainApp(QMainWindow):
             self._last_real_tab_index = tab_index
             QTimer.singleShot(0, self._update_tab_navigation_controls)
             QTimer.singleShot(50, self._update_tab_navigation_controls)
+
+        if hasattr(self, 'apply_global_bg_to_viewers'):
+            self.apply_global_bg_to_viewers()
+
         return tab_index
 
     def _attach_bottom_terminal(self, host_widget, parent_layout, content_widget):

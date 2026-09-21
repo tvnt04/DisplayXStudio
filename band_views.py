@@ -29,7 +29,7 @@ class IndividualBandWorker(QThread):
     error = pyqtSignal(str)
     progress = pyqtSignal(int)
 
-    def __init__(self, frames, enhance, offset_x, offset_y, start_frame, end_frame, gap, parent=None):
+    def __init__(self, frames, enhance, offset_x, offset_y, start_frame, end_frame, gap, parent=None, force_all_frames=False):
         super().__init__(parent)
         self.frames = frames
         self.enhance = enhance
@@ -38,6 +38,7 @@ class IndividualBandWorker(QThread):
         self.start_frame = start_frame
         self.end_frame = end_frame
         self.gap = gap
+        self.force_all_frames = force_all_frames
 
     def run(self):
         try:
@@ -84,7 +85,7 @@ class IndividualBandWorker(QThread):
                 safe_limit = int(psutil.virtual_memory().available * 0.30)
 
                 step = 1
-                if safe_limit > 0 and estimated_bytes > safe_limit:
+                if not self.force_all_frames and safe_limit > 0 and estimated_bytes > safe_limit:
                     step = max(2, (estimated_bytes + safe_limit - 1) // safe_limit)
 
                 frame_indices = list(range(self.start_frame, self.end_frame + 1))[::step]
@@ -141,7 +142,7 @@ class MergedBandWorker(QThread):
     error = pyqtSignal(str)
     progress = pyqtSignal(int)
 
-    def __init__(self, band_frames, left_key, right_key, enhance, offset_x, offset_y, start_frame, end_frame, gap, parent=None):
+    def __init__(self, band_frames, left_key, right_key, enhance, offset_x, offset_y, start_frame, end_frame, gap, parent=None, force_all_frames=False):
         super().__init__(parent)
         self.band_frames = band_frames
         self.left_key = left_key
@@ -152,6 +153,7 @@ class MergedBandWorker(QThread):
         self.start_frame = start_frame
         self.end_frame = end_frame
         self.gap = gap
+        self.force_all_frames = force_all_frames
 
     def run(self):
         try:
@@ -224,7 +226,7 @@ class MergedBandWorker(QThread):
                 safe_limit = int(psutil.virtual_memory().available * 0.30)
 
                 step = 1
-                if safe_limit > 0 and estimated_bytes > safe_limit:
+                if not self.force_all_frames and safe_limit > 0 and estimated_bytes > safe_limit:
                     step = max(2, (estimated_bytes + safe_limit - 1) // safe_limit)
 
                 frame_indices = list(range(self.start_frame, self.end_frame + 1))[::step]
@@ -545,7 +547,7 @@ class BandViewsMixin:
             return base if lk and rk else None
         return None
 
-    def build_stitch_sequence(self, for_display=True):
+    def build_stitch_sequence(self, for_display=True, custom_order=None):
         bands_info_local = getattr(self, 'bands_info', {}) or {}
         band_frames = getattr(self, 'band_frames', {}) or {}
         try:
@@ -777,6 +779,25 @@ class BandViewsMixin:
                             'base': b, 'kind': 'full_unbinned', 'per_block_h': per_h, 'bin_factor': bin_factor,
                             'is_split': False, 'side': None
                         })
+
+        if custom_order and len(custom_order) == len(stitch_sequence):
+            ordered_seq = []
+            # match based on key if available, else base + side
+            for ordered_key in custom_order:
+                for entry in stitch_sequence:
+                    entry_key = entry.get('key', '')
+                    if not entry_key:
+                        if entry.get('is_split'):
+                            entry_key = f"{entry.get('base')}_{entry.get('side')}"
+                        else:
+                            entry_key = entry.get('base')
+
+                    if entry_key == ordered_key:
+                        ordered_seq.append(entry)
+                        break
+            if len(ordered_seq) == len(stitch_sequence):
+                stitch_sequence = ordered_seq
+
         cur_y = 0
         for e in stitch_sequence:
             e['start_y'] = cur_y
@@ -788,8 +809,8 @@ class BandViewsMixin:
         if not self._is_1_to_4_enabled():
             return x, y, False
         try:
-            display_seq = self.build_stitch_sequence(for_display=True)
-            raw_seq = self.build_stitch_sequence(for_display=False)
+            display_seq = self.build_stitch_sequence(for_display=True, custom_order=getattr(self, 'band_stack_order', None))
+            raw_seq = self.build_stitch_sequence(for_display=False, custom_order=getattr(self, 'band_stack_order', None))
             if not display_seq or not raw_seq or len(display_seq) != len(raw_seq):
                 return x, y, True
             for idx, disp_entry in enumerate(display_seq):
@@ -1096,7 +1117,7 @@ class BandViewsMixin:
         if self.current_frame_index >= min_frames:
             self.current_frame_index = 0
 
-        stitch_sequence = self.build_stitch_sequence()
+        stitch_sequence = self.build_stitch_sequence(custom_order=getattr(self, "band_stack_order", None))
         merge_lr = self._is_1_to_4_enabled()
 
         def _get_frame_width_for_key(k):
@@ -1393,7 +1414,38 @@ class BandViewsMixin:
                     right_key = f"{base_key}_right"
                 offset_x = self.band_offsets.get(base_key, {'x':0, 'y':0})['x']
                 offset_y = self.band_offsets.get(base_key, {'x':0, 'y':0})['y']
-                worker = MergedBandWorker(self.band_frames, left_key, right_key, enhance, offset_x, offset_y, start_frame, end_frame, gap, self)
+
+                force_all = False
+                if start_frame != end_frame:
+                    lf = self.band_frames[left_key]
+                    num_frames = end_frame - start_frame + 1
+                    w = getattr(lf, 'w', 8448) * 2
+                    h = getattr(lf, 'h', 384)
+                    bytes_per_frame = int(w) * int(h) * 2 * 3
+                    estimated_bytes = bytes_per_frame * num_frames
+                    safe_limit = int(psutil.virtual_memory().available * 0.30)
+                    if safe_limit > 0 and estimated_bytes > safe_limit:
+                        step = max(2, (estimated_bytes + safe_limit - 1) // safe_limit)
+                        safe_frames = len(list(range(start_frame, end_frame + 1))[::step])
+                        est_gb = estimated_bytes / (1024**3)
+                        avail_gb = psutil.virtual_memory().available / (1024**3)
+                        msg = QMessageBox(self)
+                        msg.setWindowTitle("Memory Warning")
+                        msg.setIcon(QMessageBox.Warning)
+                        msg.setText(
+                            f"Loading {num_frames} frames requires approximately {est_gb:.1f} GB of memory.\n"
+                            f"Available RAM: {avail_gb:.1f} GB\n\n"
+                            f"To prevent crashes, the app will show every {step}th frame "
+                            f"({safe_frames} of {num_frames} frames)."
+                        )
+                        load_all_btn = msg.addButton("Load All", QMessageBox.AcceptRole)
+                        continue_btn = msg.addButton("Continue", QMessageBox.RejectRole)
+                        msg.setDefaultButton(continue_btn)
+                        msg.exec_()
+                        if msg.clickedButton() == load_all_btn:
+                            force_all = True
+
+                worker = MergedBandWorker(self.band_frames, left_key, right_key, enhance, offset_x, offset_y, start_frame, end_frame, gap, self, force_all_frames=force_all)
                 worker.finished.connect(lambda images, k=key: self._on_individual_band_loaded(widget, images, k))
                 worker.error.connect(lambda err: self._on_individual_band_error(widget, err))
                 worker.progress.connect(widget.loading_progress.setValue)
@@ -1401,7 +1453,38 @@ class BandViewsMixin:
                 base_key = key.rsplit('_', 1)[0] if '_' in key else key
                 offset_x = self.band_offsets.get(base_key, {'x':0, 'y':0})['x']
                 offset_y = self.band_offsets.get(base_key, {'x':0, 'y':0})['y']
-                worker = IndividualBandWorker(self.band_frames[key], enhance, offset_x, offset_y, start_frame, end_frame, gap, self)
+
+                force_all = False
+                if start_frame != end_frame:
+                    frames_obj = self.band_frames[key]
+                    num_frames = end_frame - start_frame + 1
+                    w = getattr(frames_obj, 'w', 8448)
+                    h = getattr(frames_obj, 'h', 384)
+                    bytes_per_frame = int(w) * int(h) * 2 * 3
+                    estimated_bytes = bytes_per_frame * num_frames
+                    safe_limit = int(psutil.virtual_memory().available * 0.30)
+                    if safe_limit > 0 and estimated_bytes > safe_limit:
+                        step = max(2, (estimated_bytes + safe_limit - 1) // safe_limit)
+                        safe_frames = len(list(range(start_frame, end_frame + 1))[::step])
+                        est_gb = estimated_bytes / (1024**3)
+                        avail_gb = psutil.virtual_memory().available / (1024**3)
+                        msg = QMessageBox(self)
+                        msg.setWindowTitle("Memory Warning")
+                        msg.setIcon(QMessageBox.Warning)
+                        msg.setText(
+                            f"Loading {num_frames} frames requires approximately {est_gb:.1f} GB of memory.\n"
+                            f"Available RAM: {avail_gb:.1f} GB\n\n"
+                            f"To prevent crashes, the app will show every {step}th frame "
+                            f"({safe_frames} of {num_frames} frames)."
+                        )
+                        load_all_btn = msg.addButton("Load All", QMessageBox.AcceptRole)
+                        continue_btn = msg.addButton("Continue", QMessageBox.RejectRole)
+                        msg.setDefaultButton(continue_btn)
+                        msg.exec_()
+                        if msg.clickedButton() == load_all_btn:
+                            force_all = True
+
+                worker = IndividualBandWorker(self.band_frames[key], enhance, offset_x, offset_y, start_frame, end_frame, gap, self, force_all_frames=force_all)
                 worker.finished.connect(lambda images, k=key: self._on_individual_band_loaded(widget, images, k))
                 worker.error.connect(lambda err: self._on_individual_band_error(widget, err))
                 worker.progress.connect(widget.loading_progress.setValue)

@@ -2071,7 +2071,7 @@ class PixelInfoBox(QWidget):
                 pass
         if self.calculate_mode and calc_available:
             try:
-                self.info_text.append("\nCalculated:")
+                self.info_text.append("\nROI Statistics:")
                 # (Region WxH removed — only pixel count will be shown)
                 self.info_text.append(f"  Mean: {self.last_calc_mean:.6f}")
                 self.info_text.append(f"  Variance: {self.last_calc_variance:.6f}")
@@ -2376,9 +2376,26 @@ class CustomTabBar(QTabBar):
         self._do_scroll(step)
 
 
+class SelectAllLineEdit(QLineEdit):
+    def focusInEvent(self, event):
+        super().focusInEvent(event)
+        QTimer.singleShot(0, self.selectAll)
+
+    def mousePressEvent(self, event):
+        super().mousePressEvent(event)
+        if not getattr(self, '_selected_on_click', False):
+            QTimer.singleShot(0, self.selectAll)
+            self._selected_on_click = True
+
+    def focusOutEvent(self, event):
+        super().focusOutEvent(event)
+        self._selected_on_click = False
+
+
 class ParameterDialog(QDialog):
-    def __init__(self, parent=None, dataset_params=None):
+    def __init__(self, parent=None, dataset_params=None, folder=None):
         super().__init__(parent)
+        self.folder = folder or (getattr(parent, "current_folder", None) if parent else None)
         self.setWindowTitle("Enter Image Parameters")
         layout = QFormLayout()
         self.setLayout(layout)
@@ -2416,9 +2433,11 @@ class ParameterDialog(QDialog):
                 pass
 
         self.width_entry = QLineEdit(default_width)
+        self.width_entry = SelectAllLineEdit(default_width)
         layout.addRow("Width:", self.width_entry)
 
         self.height_entry = QLineEdit(default_raw_height)
+        self.height_entry = SelectAllLineEdit(default_raw_height)
         layout.addRow("Height (RegionHeight):", self.height_entry)
 
         self.tdi_stage_var = QComboBox()
@@ -2437,6 +2456,9 @@ class ParameterDialog(QDialog):
         layout.addRow("Computed Band Height:", self.effective_height_label)
         self.height_entry.textChanged.connect(self._update_effective_height_hint)
         self.tdi_stage_var.currentTextChanged.connect(self._update_effective_height_hint)
+        self.width_entry.textChanged.connect(self._auto_detect_bitdepth_on_edit)
+        self.height_entry.textChanged.connect(self._auto_detect_bitdepth_on_edit)
+        self.tdi_stage_var.currentTextChanged.connect(self._auto_detect_bitdepth_on_edit)
         self._update_effective_height_hint()
 
         buttons = QHBoxLayout()
@@ -2451,6 +2473,28 @@ class ParameterDialog(QDialog):
         buttons.addWidget(cancel_btn)
 
         layout.addRow(buttons)
+
+        # Set initial focus to Width and auto-select all text so typing immediately overwrites it
+        self.width_entry.setFocus()
+        QTimer.singleShot(0, self.width_entry.selectAll)
+
+    def _auto_detect_bitdepth_on_edit(self):
+        if not getattr(self, "folder", None):
+            return
+        try:
+            import os
+            if not os.path.exists(self.folder):
+                return
+            w = int(self.width_entry.text())
+            rh = int(self.height_entry.text())
+            tdi = int(self.tdi_stage_var.currentText())
+            eff_h = rh if tdi == 0 else max(1, rh // tdi)
+            from utils import _infer_bit_depth_from_band_files
+            bd = _infer_bit_depth_from_band_files(self.folder, width=w, effective_height=eff_h, raw_height=rh)
+            if bd:
+                self.bitdepth_var.setCurrentText(str(bd))
+        except Exception:
+            pass
 
     def _update_effective_height_hint(self):
         try:

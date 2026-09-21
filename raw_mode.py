@@ -118,36 +118,130 @@ class StackBuildThread(QThread):
             traceback.print_exc()
             self.error.emit(str(e))
 
+class SelectAllLineEdit(QLineEdit):
+    def focusInEvent(self, event):
+        super().focusInEvent(event)
+        QTimer.singleShot(0, self.selectAll)
+
+    def mousePressEvent(self, event):
+        super().mousePressEvent(event)
+        if not getattr(self, '_selected_on_click', False):
+            QTimer.singleShot(0, self.selectAll)
+            self._selected_on_click = True
+
+    def focusOutEvent(self, event):
+        super().focusOutEvent(event)
+        self._selected_on_click = False
+
+
+_SESSION_RAW_PARAMS = {'width': 8448, 'height': 384, 'bitdepth': 10}
+
+def _get_persisted_raw_defaults():
+    global _SESSION_RAW_PARAMS
+    try:
+        from app_paths import get_app_data_path
+        session_file = get_app_data_path("last_session.json")
+        if os.path.exists(session_file):
+            with open(session_file, 'r', encoding='utf-8') as sf:
+                data = json.load(sf)
+                if 'last_raw_params' in data and isinstance(data['last_raw_params'], dict):
+                    _SESSION_RAW_PARAMS.update(data['last_raw_params'])
+    except Exception:
+        pass
+    return _SESSION_RAW_PARAMS.copy()
+
+def _save_persisted_raw_defaults(params):
+    global _SESSION_RAW_PARAMS
+    if not isinstance(params, dict):
+        return
+    _SESSION_RAW_PARAMS.update({
+        'width': int(params.get('width', 8448)),
+        'height': int(params.get('height', 384)),
+        'bitdepth': int(params.get('bitdepth', 10)),
+    })
+    try:
+        from app_paths import get_app_data_path
+        session_file = get_app_data_path("last_session.json")
+        data = {}
+        if os.path.exists(session_file):
+            try:
+                with open(session_file, 'r', encoding='utf-8') as sf:
+                    data = json.load(sf)
+            except Exception:
+                data = {}
+        data['last_raw_params'] = _SESSION_RAW_PARAMS
+        with open(session_file, 'w', encoding='utf-8') as sf:
+            json.dump(data, sf, indent=2)
+    except Exception:
+        pass
+
+
 class RawParameterDialog(QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, initial_params=None):
         super().__init__(parent)
         self.setWindowTitle("Raw Image Parameters")
         layout = QFormLayout()
         self.setLayout(layout)
-        self.width_entry = QLineEdit("8448")
+
+        defaults = _get_persisted_raw_defaults()
+        if initial_params and isinstance(initial_params, dict):
+            defaults.update(initial_params)
+
+        default_width = str(defaults.get("width", 8448))
+        default_height = str(defaults.get("height", 384))
+        default_bitdepth = str(defaults.get("bitdepth", 10))
+
+        self.width_entry = SelectAllLineEdit(default_width)
         layout.addRow("Width:", self.width_entry)
-        self.height_entry = QLineEdit("384")
+        self.height_entry = SelectAllLineEdit(default_height)
         layout.addRow("Height:", self.height_entry)
+
         self.bitdepth_var = QComboBox()
-        self.bitdepth_var.addItems(["8", "10", "12", "16", "32"])
-        self.bitdepth_var.setCurrentIndex(1)  # Default to 10-bit
+        supported_bitdepths = ["8", "10", "12", "16", "32"]
+        self.bitdepth_var.addItems(supported_bitdepths)
+        if default_bitdepth in supported_bitdepths:
+            self.bitdepth_var.setCurrentText(default_bitdepth)
+        else:
+            self.bitdepth_var.setCurrentText("10")
         layout.addRow("Bit Depth:", self.bitdepth_var)
+
         buttons = QHBoxLayout()
         ok_btn = QPushButton("OK")
         ok_btn.setToolTip("Apply parameters")
-        ok_btn.clicked.connect(self.accept)
+        ok_btn.clicked.connect(self._on_accept)
+        buttons.addWidget(ok_btn)
         cancel_btn = QPushButton("Cancel")
         cancel_btn.setToolTip("Close without changes")
         cancel_btn.clicked.connect(self.reject)
-        buttons.addWidget(ok_btn)
         buttons.addWidget(cancel_btn)
         layout.addRow(buttons)
 
+        # Set initial focus to Width and auto-select all text so typing immediately overwrites it
+        self.width_entry.setFocus()
+        QTimer.singleShot(0, self.width_entry.selectAll)
+
+    def _on_accept(self):
+        params = self.get_parameters()
+        _save_persisted_raw_defaults(params)
+        self.accept()
+
     def get_parameters(self):
+        try:
+            w = int(self.width_entry.text())
+        except Exception:
+            w = 8448
+        try:
+            h = int(self.height_entry.text())
+        except Exception:
+            h = 384
+        try:
+            bd = int(self.bitdepth_var.currentText())
+        except Exception:
+            bd = 10
         return {
-            "width": int(self.width_entry.text()),
-            "height": int(self.height_entry.text()),
-            "bitdepth": int(self.bitdepth_var.currentText())
+            "width": w,
+            "height": h,
+            "bitdepth": bd
         }
 
 class RawLoadingThread(QThread):
@@ -686,9 +780,11 @@ class RawViewer(QWidget):
 
             if not use_saved:
                 dialog = RawParameterDialog(self)
+                dialog = RawParameterDialog(self, initial_params=getattr(self, 'last_params', None) or _get_persisted_raw_defaults())
                 if dialog.exec_() != QDialog.Accepted:
                     return
                 params = dialog.get_parameters()
+                _save_persisted_raw_defaults(params)
                 est_bytes = params["width"] * params["height"] * max(1, params["bitdepth"] // 8)
 
         self.last_params = params.copy()
@@ -913,9 +1009,12 @@ class RawViewer(QWidget):
         dialog.width_entry.setText(str(w))
         dialog.height_entry.setText(str(h))
         dialog.bitdepth_var.setCurrentText(str(bd))
+        p = self.last_params or _get_persisted_raw_defaults()
+        dialog = RawParameterDialog(self, initial_params=p)
 
         if dialog.exec_() == QDialog.Accepted:
             params = dialog.get_parameters()
+            _save_persisted_raw_defaults(params)
             self.last_params = params.copy()
             # Always force a real reload from disk with the new params.
             file_path = self.last_file_path

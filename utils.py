@@ -40,9 +40,9 @@ def _process_frame_array_to_hist(frame_like, ignore_extremes):
         frame_arr = frame_like.get_raw(0) if hasattr(frame_like, 'get_raw') else np.asarray(frame_like)
     else:
         frame_arr = np.asarray(frame_like)
-    
+
     original_dtype = frame_arr.dtype
-    
+
     # For uint16 or higher, keep original dtype; for others convert to uint8
     if original_dtype in (np.uint16, np.uint32, np.uint64, np.int16, np.int32, np.int64):
         a = frame_arr.ravel()
@@ -56,7 +56,7 @@ def _process_frame_array_to_hist(frame_like, ignore_extremes):
     else:
         a = np.asarray(frame_like, dtype=np.uint8).ravel()
         num_bins = 256
-    
+
     if a.size == 0:
         return np.zeros(num_bins, dtype=np.int64), 0.0, 0.0, 0, 255, 0
 
@@ -106,20 +106,20 @@ def _compute_hist_for_key(args):
         try:
             if idx < 0 or idx >= len(frames):
                 continue
-            
+
             # Get frame - for LazyFrames, use get_raw() to get original bitdepth
             if isinstance(frames, LazyFrames):
                 frame = frames.get_raw(idx)
             else:
                 frame = frames[idx]
-            
+
             hist, s, s2, cnt, mn, mx = _process_frame_array_to_hist(frame, ignore_extremes)
-            
+
             # Initialize hist_acc with the size from first non-empty histogram
             if hist_acc is None:
                 hist_size = len(hist)
                 hist_acc = np.zeros(hist_size, dtype=np.int64)
-            
+
             # Accumulate histogram - pad/truncate to match hist_size if needed
             if len(hist) > hist_size:
                 hist_acc += hist[:hist_size]
@@ -128,7 +128,7 @@ def _compute_hist_for_key(args):
                 hist_acc += hist_padded
             else:
                 hist_acc += hist
-            
+
             total_sum += s
             total_sum_sq += s2
             total_count += cnt
@@ -363,9 +363,11 @@ def _infer_frame_count_from_logs(log_text):
         return None
     patterns = [
         r"Expected:\s*(\d+)\s*\|\s*Captured:\s*(\d+)",
-        r"No frame drops\s*[^\d]*(\d+)\s*/\s*(\d+)\s*captured",
-        r"\bCaptured:\s*(\d+)\b",
-        r"\bFrames:\s*(\d+)\b",
+        r"TotalNoOfFrames:\s*(\d+)",
+        r"TotalFrames:\s*(\d+)",
+        r"Total Frames:\s*(\d+)",
+        r"Frames Captured\s*[:=]\s*(\d+)",
+        r"CapturedCount\s*[:=]\s*(\d+)",
     ]
     for pattern in patterns:
         match = re.search(pattern, log_text, re.IGNORECASE)
@@ -375,112 +377,130 @@ def _infer_frame_count_from_logs(log_text):
         if not nums:
             continue
         if len(nums) >= 2:
-            # Prefer the captured count when both expected and captured are present.
             return max(nums[-1], 0) or None
         return max(nums[0], 0) or None
     return None
 
 
-def _infer_bit_depth_from_band_files(folder, width, effective_height, frame_count=None):
+def _infer_bit_depth_from_band_files(folder, width, effective_height=None, raw_height=None, frame_count=None):
     try:
-        width_i = int(width)
-        height_i = int(effective_height)
+        width_i = int(width) if width else 8448
     except Exception:
-        return None
-    if width_i <= 0 or height_i <= 0:
-        return None
+        width_i = 8448
 
-    candidate_scores = {8: 0, 10: 0, 12: 0, 16: 0}
-    candidate_details = {8: None, 10: None, 12: None, 16: None}
-    band_pattern = re.compile(r"\.band(\d)(\d?)$", re.IGNORECASE)
+    heights_to_try = []
+    if effective_height:
+        try:
+            h = int(effective_height)
+            if h > 0: heights_to_try.append(h)
+        except Exception:
+            pass
+    if raw_height:
+        try:
+            rh = int(raw_height)
+            if rh > 0 and rh not in heights_to_try: heights_to_try.append(rh)
+        except Exception:
+            pass
+    if not heights_to_try:
+        heights_to_try = [384, 48, 24, 192]
+
+    candidate_scores = {8: 0, 10: 0, 12: 0, 16: 0, 32: 0}
+    candidate_details = {8: None, 10: None, 12: None, 16: None, 32: None}
 
     try:
         names = sorted(os.listdir(folder))
     except Exception:
         return None
 
+    # Comprehensive band file discovery
+    band_files = []
     for name in names:
-        match = band_pattern.search(name)
-        if not match:
+        lower = name.lower()
+        if lower.endswith(('.meta', '.txt', '.log', '.json', '.hdr', '.db', '.py', '.sh')):
             continue
+        if '.band' in lower or lower.endswith(('.raw', '.dat', '.bin')):
+            path = os.path.join(folder, name)
+            if os.path.isfile(path) and os.path.getsize(path) > 0:
+                band_files.append((name, path, os.path.getsize(path)))
 
-        path = os.path.join(folder, name)
-        if not os.path.isfile(path):
-            continue
-        try:
-            file_size = os.path.getsize(path)
-        except Exception:
-            continue
-        if file_size <= 0:
-            continue
+    if not band_files:
+        return None
 
-        variant = match.group(2)
-        frame_w = width_i
-        frame_h = height_i
-        if variant == "2":
-            frame_w = max(1, width_i // 2)
-            frame_h = max(1, height_i // 2)
-        elif variant in {"0", "1"}:
-            frame_w = max(1, width_i // 2)
+    for name, path, file_size in band_files:
+        # Determine variant (split, binned, raw)
+        variant = "full"
+        if '.band' in name:
+            parts = name.split('.band')
+            suffix = parts[1] if len(parts) > 1 else ""
+            if suffix.endswith('2') and len(suffix) > 1:
+                variant = "binned"
+            elif suffix.endswith(('0', '1')) and len(suffix) > 1 and suffix[-2].isdigit():
+                variant = "split"
+        elif any(name.lower().endswith(x) for x in ('_left.raw', '_right.raw', '_left.bin', '_right.bin')):
+            variant = "split"
+        elif any(name.lower().endswith(x) for x in ('_binned.raw', '_binned.bin')):
+            variant = "binned"
 
-        total_pixels = frame_w * frame_h
-        if total_pixels <= 0:
-            continue
+        for h_test in heights_to_try:
+            frame_w = width_i
+            frame_h = h_test
+            if variant == "binned":
+                frame_w = max(1, width_i // 2)
+                frame_h = max(1, h_test // 2)
+            elif variant == "split":
+                frame_w = max(1, width_i // 2)
 
-        for bit_depth in (8, 10, 12, 16):
-            bytes_per_frame = _bitdepth_bytes_per_frame(total_pixels, bit_depth)
-            if bytes_per_frame <= 0:
+            total_pixels = frame_w * frame_h
+            if total_pixels <= 0:
                 continue
-            if frame_count:
-                if file_size == bytes_per_frame * int(frame_count):
-                    candidate_scores[bit_depth] += 3
-                    if candidate_details[bit_depth] is None:
+
+            for bit_depth in (8, 10, 12, 16, 32):
+                bytes_per_frame = _bitdepth_bytes_per_frame(total_pixels, bit_depth)
+                if bytes_per_frame <= 0:
+                    continue
+                if file_size % bytes_per_frame == 0:
+                    fc = file_size // bytes_per_frame
+                    if fc <= 0:
+                        continue
+                    score = 1
+                    if frame_count and int(frame_count) > 0 and fc == int(frame_count):
+                        score = 10
+
+                    candidate_scores[bit_depth] += score
+                    if candidate_details[bit_depth] is None or score == 10:
                         candidate_details[bit_depth] = {
                             "file": name,
                             "file_size": file_size,
                             "frame_w": frame_w,
                             "frame_h": frame_h,
                             "bytes_per_frame": bytes_per_frame,
-                            "frame_count": int(frame_count),
-                            "variant": variant or "full",
+                            "frame_count": fc,
+                            "variant": variant,
                         }
-            elif file_size % bytes_per_frame == 0:
-                candidate_scores[bit_depth] += 1
-                if candidate_details[bit_depth] is None:
-                    candidate_details[bit_depth] = {
-                        "file": name,
-                        "file_size": file_size,
-                        "frame_w": frame_w,
-                        "frame_h": frame_h,
-                        "bytes_per_frame": bytes_per_frame,
-                        "frame_count": file_size // bytes_per_frame,
-                        "variant": variant or "full",
-                    }
 
     best_bit_depth = None
     best_score = 0
-    for bit_depth in (16, 12, 10, 8):
+    # Prioritize in sensible order when scores tie
+    for bit_depth in (16, 10, 12, 8, 32):
         score = candidate_scores.get(bit_depth, 0)
         if score > best_score:
             best_score = score
             best_bit_depth = bit_depth
+
     if best_score > 0 and best_bit_depth is not None:
         detail = candidate_details.get(best_bit_depth) or {}
         print(
-            "[AutoFill] Detected "
-            f"{best_bit_depth}-bit depth from {detail.get('file', 'unknown file')}: "
-            f"file_size={detail.get('file_size', 0)} bytes, "
-            f"calculation=({detail.get('frame_h', 0)} x {detail.get('frame_w', 0)} x {best_bit_depth}/8) "
-            f"x {detail.get('frame_count', 0)} frames = "
-            f"{detail.get('bytes_per_frame', 0)} x {detail.get('frame_count', 0)} = "
-            f"{detail.get('bytes_per_frame', 0) * detail.get('frame_count', 0)} bytes"
+            f"[AutoFill] Detected {best_bit_depth}-bit depth from {detail.get('file', 'file')}: "
+            f"size={detail.get('file_size', 0)} bytes, "
+            f"frame=({detail.get('frame_w', 0)}x{detail.get('frame_h', 0)}), "
+            f"{detail.get('frame_count', 0)} frames"
         )
     return best_bit_depth if best_score > 0 else None
 
 
 def infer_dataset_image_params(folder):
     """
-    Infer width, RegionHeight, and TDI stages from dataset JSON/log files.
+    Infer width, RegionHeight, TDI stages, and bit depth from dataset JSON, HDR, and log files.
     """
     folder = os.path.abspath(folder)
     inferred = {}
@@ -497,16 +517,28 @@ def infer_dataset_image_params(folder):
     def _consume_mapping(obj):
         if not isinstance(obj, dict):
             return
-        if "Width" in obj:
-            _set_if_valid("width", obj.get("Width"))
-        if "RegionHeight" in obj:
-            _set_if_valid("raw_height", obj.get("RegionHeight"))
-        if "TDIStages" in obj:
-            inferred["tdi_stage"] = normalize_tdi_stage(obj.get("TDIStages"))
-        elif "TDI_Stages" in obj:
-            inferred["tdi_stage"] = normalize_tdi_stage(obj.get("TDI_Stages"))
-        if "BandHeight" in obj:
-            _set_if_valid("effective_height", obj.get("BandHeight"))
+        for k, v in obj.items():
+            lk = k.lower().replace("-", "_").replace(" ", "_")
+            if lk in {"width", "applied_width", "image_width", "samples"}:
+                _set_if_valid("width", v)
+            elif lk in {"regionheight", "region_height", "raw_height", "height"}:
+                _set_if_valid("raw_height", v)
+            elif lk in {"tdistages", "tdi_stages", "tdi_stage", "tdistage", "tdi_status", "tdistatus", "tdimode"}:
+                inferred["tdi_stage"] = normalize_tdi_stage(v)
+            elif lk in {"bandheight", "band_height", "effective_height", "applied_height", "computed_band_height"}:
+                _set_if_valid("effective_height", v)
+            elif lk in {"bit_depth", "bitdepth", "bits_per_pixel", "bit_per_pixel", "bitsperpixel"}:
+                _set_if_valid("bit_depth", v)
+            elif lk in {"datatype", "data_type"}:
+                dt_map = {1: 8, 2: 16, 12: 16, 4: 32}
+                try:
+                    dt_val = int(v)
+                    if dt_val in dt_map:
+                        _set_if_valid("bit_depth", dt_map[dt_val])
+                    elif dt_val in {8, 10, 12, 16, 32}:
+                        _set_if_valid("bit_depth", dt_val)
+                except Exception:
+                    pass
 
     try:
         names = os.listdir(folder)
@@ -525,6 +557,20 @@ def infer_dataset_image_params(folder):
                 _consume_mapping(payload)
             except Exception:
                 pass
+        elif lower_name.endswith(".hdr"):
+            try:
+                hdr_dict = {}
+                with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                    for line in f:
+                        if "=" in line:
+                            k, v = line.split("=", 1)
+                            hdr_dict[k.strip()] = v.strip()
+                        elif ":" in line:
+                            k, v = line.split(":", 1)
+                            hdr_dict[k.strip()] = v.strip()
+                _consume_mapping(hdr_dict)
+            except Exception:
+                pass
         elif lower_name.endswith(".log"):
             try:
                 with open(path, "r", encoding="utf-8", errors="ignore") as f:
@@ -536,11 +582,15 @@ def infer_dataset_image_params(folder):
     frame_count = _infer_frame_count_from_logs(log_text)
     if log_text:
         patterns = [
-            ("width", r"Applied Width\s*=\s*(\d+)"),
-            ("raw_height", r"Applied RegionHeight\s*=\s*(\d+)"),
-            ("tdi_stage", r"Applied TDI_Stages\s*=\s*(\d+)"),
-            ("effective_height", r"Applied Height\s*=\s*(\d+)"),
-            ("effective_height", r"Computed BAND_HEIGHT\s*=\s*(\d+)"),
+            ("width", r"(?:Applied\s+)?Width\s*[:=]\s*(\d+)"),
+            ("raw_height", r"(?:Applied\s+)?RegionHeight\s*[:=]\s*(\d+)"),
+            ("tdi_stage", r"(?:Applied\s+(?:default\s+)?)?TDI[_\s-]*Stages?\s*[:=]\s*(\d+)"),
+            ("tdi_stage", r"TDI\s+Status\s*[:=]\s*(\d+)"),
+            ("effective_height", r"(?:Applied\s+)?Height\s*[:=]\s*(\d+)"),
+            ("effective_height", r"Computed\s+BAND_HEIGHT\s*[:=]\s*(\d+)"),
+            ("effective_height", r"BandHeight\s*[:=]\s*(\d+)"),
+            ("bit_depth", r"(?:Applied\s+)?Bit[_\s-]*Depth\s*[:=]\s*(\d+)"),
+            ("bit_depth", r"Bits[_\s-]*Per[_\s-]*Pixel\s*[:=]\s*(\d+)"),
         ]
         for key, pattern in patterns:
             match = re.search(pattern, log_text, re.IGNORECASE)
@@ -556,16 +606,21 @@ def infer_dataset_image_params(folder):
     if raw_height:
         inferred["tdi_stage"] = tdi_stage
         inferred["effective_height"] = raw_height if tdi_stage == 0 else max(1, raw_height // tdi_stage)
+
+    # If bit depth is not directly given, deduce from band files
+    if not inferred.get("bit_depth"):
         bit_depth = _infer_bit_depth_from_band_files(
             folder,
-            inferred.get("width", 0),
-            inferred.get("effective_height", 0),
+            width=inferred.get("width", 8448),
+            effective_height=inferred.get("effective_height"),
+            raw_height=raw_height,
             frame_count=frame_count,
         )
         if bit_depth:
             inferred["bit_depth"] = bit_depth
 
     return inferred
+
 
 
 def load_recents():
@@ -727,7 +782,7 @@ def atomic_write_json(path, data):
 def load_folder_params(folder):
     # normalize folder path
     folder = os.path.abspath(folder).replace('\\', '/')
-    
+
     # 1. Check for legacy parameters.json
     p = os.path.join(folder, PARAM_FILENAME)
     legacy_data = None
@@ -756,7 +811,7 @@ def load_folder_params(folder):
         if not db_data or _param_hash(legacy_data) != _param_hash(db_data):
             save_params_for_path(folder, legacy_data, is_migration=True)
             db_data = legacy_data
-        
+
         # Always delete the old JSON once seen
         try:
             os.remove(p)
@@ -801,7 +856,7 @@ def get_saved_params_for_file(file_path):
 def save_params_for_path(path, params, as_default=False, pattern=None, is_migration=False):
     folder = path if os.path.isdir(path) else os.path.dirname(os.path.abspath(path))
     folder = os.path.abspath(folder).replace('\\', '/')
-    
+
     # Load existing data from DB
     data = {}
     try:
@@ -828,7 +883,7 @@ def save_params_for_path(path, params, as_default=False, pattern=None, is_migrat
             else:
                 rel = os.path.relpath(path, folder).replace('\\', '/')
                 files[rel] = params
-    
+
     # Save to SQLite
     try:
         with _get_db_conn() as conn:
@@ -864,7 +919,7 @@ def _unpack_10bit_raw(data, w, h):
     """Unpack 10-bit data and return raw uint16 values (0-1023)."""
     total_pixels = w * h
     unpacked = np.zeros(total_pixels, dtype=np.uint16)
-    
+
     num_full_groups = len(data) // 5
     d = np.frombuffer(data[:num_full_groups*5], dtype=np.uint8).reshape(-1,5)
     expanded_data = np.zeros(d.shape[0], dtype=np.uint64)
@@ -872,13 +927,13 @@ def _unpack_10bit_raw(data, w, h):
         expanded_data += d[:,j].astype(np.uint64) << (8 * j)
     for j in range(4):
         unpacked[j::4] = (expanded_data >> (10 * j)) & 0x3FF
-    
+
     remaining_bytes = len(data) % 5
     if remaining_bytes:
         last_bits = int.from_bytes(data[-remaining_bytes:], 'little')
         extra_pixels = np.array([(last_bits >> (10 * k)) & 0x3FF for k in range((remaining_bytes * 8) // 10)], dtype=np.uint16)
         unpacked[num_full_groups*4:num_full_groups*4+len(extra_pixels)] = extra_pixels[:total_pixels - num_full_groups*4]
-    
+
     return unpacked.reshape((h, w))
 
 
@@ -988,7 +1043,7 @@ def unpack_by_bitdepth(data, w, h, bitdepth, return_raw=False):
         return frames
     else:
         raise ValueError(f"Unsupported bit depth: {bitdepth}")
-    
+
 
 class LazyFrames:
     def __init__(self, file_path, w, h, bitdepth, use_memmap=False):
@@ -1054,7 +1109,7 @@ class LazyFrames:
         if len(frames) == 0:
             return np.zeros((self.h, self.w), dtype=np.uint8)
         return frames[0]
-    
+
     def get_raw(self, idx):
         """Get raw bitdepth frame for histogram computation."""
         if idx < 0 or idx >= self.num_frames:
@@ -1082,13 +1137,13 @@ class LazyFrames:
         if len(frames) == 0:
             return np.zeros((self.h, self.w), dtype=np.uint16)
         return frames[0]
-        
+
 class TerminalWidget(QWidget):
     output_signal = pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        
+
         # Prompt identity
         self.user = getpass.getuser()
         self.host = socket.gethostname().split('.')[0]
@@ -1307,7 +1362,7 @@ class TerminalWidget(QWidget):
                     self.terminal.clear()
                     self._insert_prompt()
                     return True
-                    
+
                 # Run external command (async, prompt after finish)
                 self._run_command(cmd)
                 return True
@@ -1328,11 +1383,11 @@ class TerminalWidget(QWidget):
                     self._hist_idx = None
                     self._replace_current_input("")
                 return True
-                
+
             elif key == Qt.Key_Tab:
                 self._do_completion()
                 return True
-                
+
             elif key == Qt.Key_L and mod == Qt.ControlModifier:
                 self.terminal.clear()
                 self._insert_prompt()
@@ -1353,7 +1408,7 @@ class TerminalWidget(QWidget):
 
         # Handle all other events by passing to parent class, ensuring boolean return
         return super().eventFilter(obj, event)
-            
+
     def load_history(self):
         if os.path.exists(self.history_file):
             try:
@@ -1441,7 +1496,7 @@ class TerminalWidget(QWidget):
                 remaining_data = ""
             if remaining_data:
                 self.output_signal.emit(remaining_data)
-            
+
             try:
                 proc.readyRead.disconnect(on_ready_read)
             except Exception:
