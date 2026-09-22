@@ -1,5 +1,6 @@
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QTextEdit
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QTextEdit, QApplication
 import os
+import json
 import html as html_module
 
 _MODE_TITLES = {
@@ -12,7 +13,10 @@ _MODE_TITLES = {
     "global": "Global Controls & Shortcuts Reference",
 }
 
-_CSS_STYLE = """
+
+def _get_css(is_dark=True):
+    if is_dark:
+        return """
 <style>
     body {
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -57,12 +61,14 @@ _CSS_STYLE = """
     }
     strong {
         color: #FFFFFF;
+        font-weight: 700;
     }
     code {
         background-color: #2D2D2D;
         color: #FFCC80;
         padding: 2px 5px;
         border-radius: 3px;
+        border: 1px solid #3E3E3E;
         font-family: Consolas, Monaco, "Courier New", monospace;
         font-size: 12px;
     }
@@ -112,12 +118,150 @@ _CSS_STYLE = """
         padding: 8px 12px;
         margin: 10px 0;
         border-radius: 0 4px 4px 0;
+        color: #E0E0E0;
+    }
+</style>
+"""
+    else:
+        return """
+<style>
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        font-size: 13px;
+        line-height: 1.6;
+        color: #212121;
+        background-color: #FFFFFF;
+        padding: 12px;
+    }
+    h2 {
+        color: #01579B;
+        font-size: 18px;
+        border-bottom: 2px solid #0288D1;
+        padding-bottom: 6px;
+        margin-top: 4px;
+        margin-bottom: 12px;
+    }
+    h3 {
+        color: #0277BD;
+        font-size: 15px;
+        margin-top: 18px;
+        margin-bottom: 6px;
+        border-bottom: 1px solid #CFD8DC;
+        padding-bottom: 4px;
+    }
+    h4 {
+        color: #D84315;
+        font-size: 13px;
+        margin-top: 14px;
+        margin-bottom: 4px;
+    }
+    p, li {
+        color: #37474F;
+    }
+    ul, ol {
+        margin-top: 4px;
+        margin-bottom: 8px;
+        padding-left: 22px;
+    }
+    li {
+        margin-bottom: 4px;
+    }
+    strong {
+        color: #000000;
+        font-weight: 700;
+    }
+    code {
+        background-color: #ECEFF1;
+        color: #BF360C;
+        padding: 2px 5px;
+        border-radius: 3px;
+        border: 1px solid #CFD8DC;
+        font-family: Consolas, Monaco, "Courier New", monospace;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    kbd {
+        background-color: #ECEFF1;
+        color: #263238;
+        border: 1px solid #B0BEC5;
+        border-radius: 3px;
+        padding: 1px 5px;
+        font-size: 11px;
+        font-family: Consolas, monospace;
+        font-weight: 700;
+    }
+    .badge {
+        display: inline-block;
+        padding: 2px 6px;
+        font-size: 11px;
+        font-weight: bold;
+        border-radius: 3px;
+        color: white;
+    }
+    .badge-ruler { background-color: #2E7D32; }
+    .badge-roi { background-color: #E65100; }
+    .badge-purple { background-color: #6A1B9A; }
+    .badge-blue { background-color: #0277BD; }
+    table {
+        border-collapse: collapse;
+        width: 100%;
+        margin: 10px 0 16px 0;
+    }
+    th, td {
+        border: 1px solid #CFD8DC;
+        padding: 6px 10px;
+        text-align: left;
+        font-size: 12px;
+        color: #263238;
+    }
+    th {
+        background-color: #ECEFF1;
+        color: #01579B;
+        font-weight: 700;
+    }
+    tr:nth-child(even) {
+        background-color: #F8F9FA;
+    }
+    .tip-box {
+        background-color: #E1F5FE;
+        border-left: 4px solid #0288D1;
+        padding: 8px 12px;
+        margin: 10px 0;
+        border-radius: 0 4px 4px 0;
+        color: #01579B;
     }
 </style>
 """
 
-_MODE_BODIES = {
-    "onboarding": _CSS_STYLE + """
+
+def _detect_dark_mode(main_app=None):
+    if main_app is not None and hasattr(main_app, "_is_dark_mode"):
+        return bool(main_app._is_dark_mode)
+
+    # Try reading session file directly
+    try:
+        from app_paths import get_app_data_path
+        session_file = get_app_data_path("last_session.json")
+        if os.path.exists(session_file):
+            with open(session_file, "r", encoding="utf-8") as sf:
+                data = json.load(sf)
+                if "dark_mode" in data:
+                    return bool(data["dark_mode"])
+    except Exception:
+        pass
+
+    app = QApplication.instance()
+    if app is not None:
+        for w in app.topLevelWidgets():
+            if hasattr(w, "_is_dark_mode"):
+                return bool(w._is_dark_mode)
+        # Fallback to palette brightness
+        return app.palette().window().color().value() < 128
+    return True
+
+
+_MODE_RAW_CONTENT = {
+    "onboarding": """
 <h3>Display X Studio — Workstation Overview</h3>
 <p>Display X Studio is an advanced visual analysis software designed for multi-spectral satellite imagery, raw sensor stream inspection, tile matrix stitching, and video sequence generation.</p>
 
@@ -165,7 +309,7 @@ _MODE_BODIES = {
 </ul>
 """,
 
-    "band": _CSS_STYLE + """
+    "band": """
 <h3>Band Mode — Multi-Spectral Analysis User Manual</h3>
 <p>Band Mode allows you to load, align, stitch, and analyze multi-spectral satellite imagery with full radiometric and geospatial measurement tools.</p>
 
@@ -275,7 +419,7 @@ _MODE_BODIES = {
 </table>
 """,
 
-    "raw": _CSS_STYLE + """
+    "raw": """
 <h3>Raw Mode — Direct Sensor Stream Inspection User Manual</h3>
 <p>Raw Mode is designed for direct inspection, frame-by-frame navigation, and temporal stack analysis of raw binary sensor stream files (<code>.raw</code>, <code>.bin</code>, <code>.dat</code>).</p>
 
@@ -319,7 +463,7 @@ _MODE_BODIES = {
 </ul>
 """,
 
-    "video": _CSS_STYLE + """
+    "video": """
 <h3>Video Mode — Multi-Frame Sequence Generator User Manual</h3>
 <p>Video Mode allows you to synthesize multi-spectral band sequences into color video animations with sub-pixel channel registration and video export options.</p>
 
@@ -341,7 +485,7 @@ _MODE_BODIES = {
 </ul>
 """,
 
-    "tiled": _CSS_STYLE + """
+    "tiled": """
 <h3>Tiled Mode — Multi-Tile Matrix Stitching User Manual</h3>
 <p>Tiled Mode stitches arrays of sensor tiles into full composite frames, supporting flexible scan patterns and edge overlap compensation.</p>
 
@@ -364,7 +508,7 @@ _MODE_BODIES = {
 </ul>
 """,
 
-    "editor": _CSS_STYLE + """
+    "editor": """
 <h3>Image Editor — Post-Processing User Manual</h3>
 <p>The integrated Image Editor provides direct post-processing, geometric adjustments, and enhancement filters.</p>
 
@@ -379,7 +523,7 @@ _MODE_BODIES = {
 </ul>
 """,
 
-    "global": _CSS_STYLE + """
+    "global": """
 <h3>Global Shortcuts &amp; User Reference Guide</h3>
 
 <h3>Keyboard Shortcuts Table</h3>
@@ -409,14 +553,19 @@ _MODE_BODIES = {
 """
 }
 
-def _default_help_html(mode="band", main_app=None):
+
+def _default_help_html(mode="band", is_dark=None, main_app=None):
     key = (mode or "band").strip().lower()
-    if key not in _MODE_BODIES:
+    if key not in _MODE_RAW_CONTENT:
         key = "band"
 
+    if is_dark is None:
+        is_dark = _detect_dark_mode(main_app)
+
+    css = _get_css(is_dark=is_dark)
     title = _MODE_TITLES.get(key, "User Manual")
-    body = _MODE_BODIES.get(key, "")
-    return f"<h2>{title}</h2>{body}"
+    body = _MODE_RAW_CONTENT.get(key, "")
+    return f"{css}<h2>{title}</h2>{body}"
 
 
 def load_help_file(path):
@@ -445,6 +594,9 @@ def create_help_tab(main_app=None, help_file_path=None, use_html=True, mode="ban
     help_text.setReadOnly(True)
     help_text.setLineWrapMode(QTextEdit.WidgetWidth)
 
+    is_dark = _detect_dark_mode(main_app)
+    _apply_textedit_style(help_text, is_dark)
+
     file_content, file_is_html = load_help_file(help_file_path)
     if file_content:
         if use_html and file_is_html:
@@ -455,9 +607,9 @@ def create_help_tab(main_app=None, help_file_path=None, use_html=True, mode="ban
             help_text.setPlainText(html_module.unescape(file_content).replace("<br/>\n", "\n"))
     else:
         if use_html:
-            help_text.setHtml(_default_help_html(mode=mode, main_app=main_app))
+            help_text.setHtml(_default_help_html(mode=mode, is_dark=is_dark, main_app=main_app))
         else:
-            help_text.setPlainText(html_module.unescape(_default_help_html(mode=mode, main_app=main_app)))
+            help_text.setPlainText(html_module.unescape(_default_help_html(mode=mode, is_dark=is_dark, main_app=main_app)))
 
     layout.addWidget(help_text)
 
@@ -465,8 +617,13 @@ def create_help_tab(main_app=None, help_file_path=None, use_html=True, mode="ban
     w._help_file_path = help_file_path
     w._help_mode = mode
 
-    def update_help(new_text=None, as_html=True, new_mode=None):
+    def update_help(new_text=None, as_html=True, new_mode=None, is_dark=None):
         active_mode = new_mode or w._help_mode
+        if is_dark is None:
+            is_dark = _detect_dark_mode(main_app)
+
+        _apply_textedit_style(help_text, is_dark)
+
         if new_text is None:
             fc, _ = load_help_file(help_file_path)
             if fc:
@@ -475,16 +632,40 @@ def create_help_tab(main_app=None, help_file_path=None, use_html=True, mode="ban
                 else:
                     help_text.setPlainText(html_module.unescape(fc).replace("<br/>\n", "\n"))
             else:
-                rendered = _default_help_html(mode=active_mode, main_app=main_app)
+                rendered = _default_help_html(mode=active_mode, is_dark=is_dark, main_app=main_app)
                 if as_html:
                     help_text.setHtml(rendered)
                 else:
                     help_text.setPlainText(html_module.unescape(rendered))
         else:
             if as_html:
-                help_text.setHtml(new_text)
+                css = _get_css(is_dark=is_dark)
+                help_text.setHtml(f"{css}{new_text}")
             else:
                 help_text.setPlainText(new_text)
 
     w.update_help = update_help
     return w
+
+
+def _apply_textedit_style(help_text, is_dark):
+    if is_dark:
+        help_text.setStyleSheet("""
+            QTextEdit {
+                background-color: #1E1E1E;
+                color: #D4D4D4;
+                border: none;
+                selection-background-color: #0288D1;
+                selection-color: #FFFFFF;
+            }
+        """)
+    else:
+        help_text.setStyleSheet("""
+            QTextEdit {
+                background-color: #FFFFFF;
+                color: #212121;
+                border: none;
+                selection-background-color: #0288D1;
+                selection-color: #FFFFFF;
+            }
+        """)

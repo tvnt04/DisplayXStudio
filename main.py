@@ -1117,7 +1117,19 @@ class MainApp(QMainWindow):
         if hasattr(self, 'apply_global_bg_to_viewers'):
             self.apply_global_bg_to_viewers()
 
+        self.refresh_help_tabs()
 
+    def refresh_help_tabs(self):
+        try:
+            from PyQt5.QtWidgets import QWidget
+            for widget in self.findChildren(QWidget):
+                if hasattr(widget, 'update_help') and hasattr(widget, '_help_mode'):
+                    try:
+                        widget.update_help(is_dark=self._is_dark_mode)
+                    except Exception:
+                        pass
+        except Exception as e:
+            print(f"Error refreshing help tabs: {e}")
 
     def load_dark_mode(self):
         try:
@@ -1156,6 +1168,8 @@ class MainApp(QMainWindow):
 
         if hasattr(self, 'apply_global_bg_to_viewers'):
             self.apply_global_bg_to_viewers()
+
+        self.refresh_help_tabs()
 
     def _configure_tab_host(self, host, role: str):
         if host is None:
