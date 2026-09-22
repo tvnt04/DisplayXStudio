@@ -48,17 +48,11 @@ def _start_detached(
     """Start a process independently of the current GUI process."""
 
     if platform.system() == "Windows":
-        creationflags = (
-            subprocess.CREATE_NEW_PROCESS_GROUP
-            | subprocess.CREATE_NO_WINDOW
-        )
-
         subprocess.Popen(
-            command,
+            ["cmd.exe", "/c", "start", "", *command],
             stdin=subprocess.DEVNULL,
             stdout=stdout if stdout is not None else subprocess.DEVNULL,
             stderr=stderr if stderr is not None else subprocess.DEVNULL,
-            creationflags=creationflags,
             close_fds=False,
         )
         return

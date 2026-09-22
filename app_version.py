@@ -1,2 +1,2 @@
 APP_NAME = "Display X Studio"
-APP_VERSION = "1.4.5"
+APP_VERSION = "1.4.6"
