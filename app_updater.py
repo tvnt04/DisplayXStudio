@@ -42,8 +42,8 @@ def get_current_appimage_path() -> Path:
 def _start_detached(
     command: list[str],
     *,
-    stdout=None,
-    stderr=None,
+    stdout: IO[str] | None = None,
+    stderr: IO[str] | None = None,
 ) -> None:
     """Start a process independently of the current GUI process."""
 
@@ -79,6 +79,14 @@ def _start_detached(
         )
         return
 
+    subprocess.Popen(
+        command,
+        start_new_session=True,
+        stdin=subprocess.DEVNULL,
+        stdout=stdout if stdout is not None else subprocess.DEVNULL,
+        stderr=stderr if stderr is not None else subprocess.DEVNULL,
+        close_fds=True,
+    )
 
 def install_appimage_update(downloaded_path: str | Path) -> None:
     """Replace the running AppImage using a detached shell helper."""
