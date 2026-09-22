@@ -224,7 +224,7 @@ exit 0
 def install_windows_installer_update(
     downloaded_path: str | Path,
 ) -> None:
-    """Launch the downloaded Windows installer and exit the current app."""
+    """Install a downloaded Inno Setup update outside the app job."""
 
     if platform.system() != "Windows":
         raise RuntimeError(
@@ -243,18 +243,125 @@ def install_windows_installer_update(
             f"Downloaded update is not a Windows executable: {downloaded}"
         )
 
-    installer = str(downloaded).replace("'", "''")
-    working_directory = str(downloaded.parent).replace("'", "''")
-
-    command = (
-        "$p = Start-Process "
-        f"-FilePath '{installer}' "
-        f"-WorkingDirectory '{working_directory}' "
-        "-PassThru; "
-        "Start-Sleep -Seconds 2; "
-        "if ($p.HasExited) { exit 1 }; "
-        "exit 0"
+    current_exe = Path(sys.executable).resolve()
+    install_dir = current_exe.parent
+    helper = Path(tempfile.gettempdir()) / (
+        "display-x-studio-installer-updater.ps1"
     )
+    log_file = Path(tempfile.gettempdir()) / (
+        "display-x-studio-installer-updater.log"
+    )
+
+    pid = os.getpid()
+
+    installer_ps = str(downloaded).replace("'", "''")
+    install_dir_ps = str(install_dir).replace("'", "''")
+    relaunch_ps = str(current_exe).replace("'", "''")
+    log_ps = str(log_file).replace("'", "''")
+
+    helper.write_text(
+        f'''param()
+
+$ErrorActionPreference = "Stop"
+
+function Write-Log([string]$Message) {{
+    $Message | Out-File -FilePath '{log_ps}' -Append -Encoding utf8
+}}
+
+$Installer = '{installer_ps}'
+$InstallDir = '{install_dir_ps}'
+$RelaunchExe = '{relaunch_ps}'
+$Pid = {pid}
+
+Write-Log "========================================"
+Write-Log "Display X Studio Windows installer updater"
+Write-Log "Installer=$Installer"
+Write-Log "InstallDir=$InstallDir"
+Write-Log "RelaunchExe=$RelaunchExe"
+Write-Log "PID=$Pid"
+Write-Log "========================================"
+
+try {{
+    Write-Log "Waiting for Display X Studio to exit..."
+    Wait-Process -Id $Pid -Timeout 120 -ErrorAction Stop
+}}
+catch {{
+    Write-Log "Display X Studio has exited."
+}}
+
+Start-Sleep -Seconds 1
+
+if (-not (Test-Path -LiteralPath $Installer -PathType Leaf)) {{
+    Write-Log "ERROR: installer not found."
+    exit 1
+}}
+
+Write-Log "Starting Inno Setup installer..."
+
+$arguments = @(
+    "/SP-",
+    "/VERYSILENT",
+    "/SUPPRESSMSGBOXES",
+    "/NORESTART",
+    "/CLOSEAPPLICATIONS",
+    "/DIR=$InstallDir"
+)
+
+$process = Start-Process `
+    -FilePath $Installer `
+    -WorkingDirectory (Split-Path -Parent $Installer) `
+    -ArgumentList $arguments `
+    -PassThru `
+    -Wait
+
+Write-Log "Installer exit code: $($process.ExitCode)"
+
+if ($process.ExitCode -ne 0) {{
+    Write-Log "ERROR: installer failed."
+    exit $process.ExitCode
+}}
+
+Start-Sleep -Seconds 2
+
+if (-not (Test-Path -LiteralPath $RelaunchExe -PathType Leaf)) {{
+    Write-Log "ERROR: updated application not found."
+    exit 1
+}}
+
+Write-Log "Launching updated application..."
+
+Start-Process `
+    -FilePath $RelaunchExe `
+    -WorkingDirectory (Split-Path -Parent $RelaunchExe)
+
+Write-Log "Update completed successfully."
+exit 0
+''',
+        encoding="utf-8",
+    )
+
+    helper_cmd = (
+        f'powershell.exe -NoProfile -ExecutionPolicy Bypass '
+        f'-File "{helper}"'
+    ).replace("'", "''")
+
+    broker_command = f"""
+$startup = ([wmiclass]"Win32_ProcessStartup").CreateInstance()
+$startup.CreateFlags = 0x09000000
+
+$newPid = 0
+
+$result = ([wmiclass]"Win32_Process").Create(
+    '{helper_cmd}',
+    $null,
+    $startup,
+    [ref]$newPid
+)
+
+if ($result -ne 0) {{
+    exit [int]$result
+}}
+"""
 
     subprocess.run(
         [
@@ -263,7 +370,7 @@ def install_windows_installer_update(
             "-ExecutionPolicy",
             "Bypass",
             "-Command",
-            command,
+            broker_command,
         ],
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
@@ -272,6 +379,7 @@ def install_windows_installer_update(
     )
 
     raise SystemExit(0)
+
 
 
 def install_windows_portable_update(downloaded_path: str | Path) -> None:
