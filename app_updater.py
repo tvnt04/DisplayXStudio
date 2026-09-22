@@ -48,13 +48,29 @@ def _start_detached(
     """Start a process independently of the current GUI process."""
 
     if platform.system() == "Windows":
-        subprocess.Popen(
-            ["cmd.exe", "/c", "start", "", *command],
-            stdin=subprocess.DEVNULL,
-            stdout=stdout if stdout is not None else subprocess.DEVNULL,
-            stderr=stderr if stderr is not None else subprocess.DEVNULL,
-            close_fds=False,
-        )
+        diagnostic = Path(tempfile.gettempdir()) / "display-x-studio-process-launch.log"
+
+        try:
+            with diagnostic.open("a", encoding="utf-8") as log:
+                log.write("\n=== Windows updater launch ===\n")
+                log.write(f"COMMAND={command!r}\n")
+
+            process = subprocess.Popen(
+                ["cmd.exe", "/c", "start", "", *command],
+                stdin=subprocess.DEVNULL,
+                stdout=stdout if stdout is not None else subprocess.DEVNULL,
+                stderr=stderr if stderr is not None else subprocess.DEVNULL,
+                close_fds=False,
+            )
+
+            with diagnostic.open("a", encoding="utf-8") as log:
+                log.write(f"POPEN_PID={process.pid}\n")
+                log.write("Popen succeeded\n")
+        except Exception as exc:
+            with diagnostic.open("a", encoding="utf-8") as log:
+                log.write(f"Popen failed: {type(exc).__name__}: {exc}\n")
+            raise
+
         return
 
     subprocess.Popen(
