@@ -247,9 +247,13 @@ def install_windows_installer_update(
     working_directory = str(downloaded.parent).replace("'", "''")
 
     command = (
-        "Start-Process "
+        "$p = Start-Process "
         f"-FilePath '{installer}' "
-        f"-WorkingDirectory '{working_directory}'"
+        f"-WorkingDirectory '{working_directory}' "
+        "-PassThru; "
+        "Start-Sleep -Seconds 2; "
+        "if ($p.HasExited) { exit 1 }; "
+        "exit 0"
     )
 
     subprocess.run(
