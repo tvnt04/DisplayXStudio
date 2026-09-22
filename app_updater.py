@@ -48,39 +48,36 @@ def _start_detached(
     """Start a process independently of the current GUI process."""
 
     if platform.system() == "Windows":
-        diagnostic = Path(tempfile.gettempdir()) / "display-x-studio-process-launch.log"
+        launcher = Path(tempfile.gettempdir()) / (
+            "display-x-studio-process-launch.cmd"
+        )
 
-        try:
-            with diagnostic.open("a", encoding="utf-8") as log:
-                log.write("\n=== Windows updater launch ===\n")
-                log.write(f"COMMAND={command!r}\n")
+        command_text = subprocess.list2cmdline(command)
 
-            process = subprocess.Popen(
-                ["cmd.exe", "/c", "start", "", *command],
-                stdin=subprocess.DEVNULL,
-                stdout=stdout if stdout is not None else subprocess.DEVNULL,
-                stderr=stderr if stderr is not None else subprocess.DEVNULL,
-                close_fds=False,
-            )
+        launcher.write_text(
+            "@echo off\r\n"
+            f"{command_text}\r\n",
+            encoding="ascii",
+        )
 
-            with diagnostic.open("a", encoding="utf-8") as log:
-                log.write(f"POPEN_PID={process.pid}\n")
-                log.write("Popen succeeded\n")
-        except Exception as exc:
-            with diagnostic.open("a", encoding="utf-8") as log:
-                log.write(f"Popen failed: {type(exc).__name__}: {exc}\n")
-            raise
-
+        subprocess.run(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                (
+                    "Start-Process "
+                    f"-FilePath '{launcher}'"
+                ),
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=True,
+        )
         return
-
-    subprocess.Popen(
-        command,
-        start_new_session=True,
-        stdin=subprocess.DEVNULL,
-        stdout=stdout if stdout is not None else subprocess.DEVNULL,
-        stderr=stderr if stderr is not None else subprocess.DEVNULL,
-        close_fds=True,
-    )
 
 
 def install_appimage_update(downloaded_path: str | Path) -> None:
