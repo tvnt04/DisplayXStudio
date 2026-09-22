@@ -50,7 +50,6 @@ def _start_detached(
     if platform.system() == "Windows":
         creationflags = (
             subprocess.CREATE_NEW_PROCESS_GROUP
-            | subprocess.DETACHED_PROCESS
             | subprocess.CREATE_NO_WINDOW
         )
 
@@ -60,7 +59,7 @@ def _start_detached(
             stdout=stdout if stdout is not None else subprocess.DEVNULL,
             stderr=stderr if stderr is not None else subprocess.DEVNULL,
             creationflags=creationflags,
-            close_fds=True,
+            close_fds=False,
         )
         return
 
