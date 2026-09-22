@@ -243,14 +243,28 @@ def install_windows_installer_update(
             f"Downloaded update is not a Windows executable: {downloaded}"
         )
 
-    subprocess.Popen(
-        [str(downloaded)],
-        cwd=str(downloaded.parent),
-        creationflags=(
-            subprocess.DETACHED_PROCESS
-            | subprocess.CREATE_NEW_PROCESS_GROUP
-        ),
-        close_fds=True,
+    installer = str(downloaded).replace("'", "''")
+    working_directory = str(downloaded.parent).replace("'", "''")
+
+    command = (
+        "Start-Process "
+        f"-FilePath '{installer}' "
+        f"-WorkingDirectory '{working_directory}'"
+    )
+
+    subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            command,
+        ],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=True,
     )
 
     raise SystemExit(0)
