@@ -176,24 +176,101 @@ def _save_persisted_raw_defaults(params):
         pass
 
 
+def infer_raw_file_params(file_path):
+    inferred = {}
+    if not file_path:
+        return inferred
+    base = os.path.basename(file_path)
+
+    dim_match = re.search(r"(\d{3,5})[xX_](\d{3,5})", base)
+    if dim_match:
+        try:
+            w, h = int(dim_match.group(1)), int(dim_match.group(2))
+            if w > 0 and h > 0:
+                inferred["width"] = w
+                inferred["height"] = h
+        except Exception:
+            pass
+
+    bd_match = re.search(r"(\d{1,2})\s*bits?", base, re.IGNORECASE)
+    if bd_match:
+        try:
+            bd = int(bd_match.group(1))
+            if bd in (8, 10, 12, 16, 32):
+                inferred["bitdepth"] = bd
+        except Exception:
+            pass
+
+    if os.path.exists(file_path):
+        try:
+            sz = os.path.getsize(file_path)
+            w = inferred.get("width", 8448)
+            h = inferred.get("height", 384)
+            pixels = w * h
+            if pixels > 0 and "bitdepth" not in inferred:
+                from utils import _bitdepth_bytes_per_frame
+                for bd in (10, 16, 12, 8, 32):
+                    bpf = _bitdepth_bytes_per_frame(pixels, bd)
+                    if bpf > 0 and sz % bpf == 0:
+                        inferred["bitdepth"] = bd
+                        break
+        except Exception:
+            pass
+
+    return inferred
+
+
 class RawParameterDialog(QDialog):
-    def __init__(self, parent=None, initial_params=None):
+    def __init__(self, parent=None, initial_params=None, file_path=None, dataset_params=None):
         super().__init__(parent)
         self.setWindowTitle("Raw Image Parameters")
         layout = QFormLayout()
         self.setLayout(layout)
 
-        defaults = _get_persisted_raw_defaults()
-        if initial_params and isinstance(initial_params, dict):
-            defaults.update(initial_params)
+        record = {}
+        if isinstance(initial_params, dict) and initial_params:
+            record.update(initial_params)
 
-        default_width = str(defaults.get("width", 8448))
-        default_height = str(defaults.get("height", 384))
-        default_bitdepth = str(defaults.get("bitdepth", 10))
+        if file_path and not record:
+            try:
+                saved = get_saved_params_for_file(file_path)
+                if isinstance(saved, dict) and saved:
+                    record.update(saved)
+            except Exception:
+                pass
+
+        if parent is not None and hasattr(parent, 'last_params') and getattr(parent, 'last_params', None) and not record:
+            try:
+                lp = getattr(parent, 'last_params')
+                if isinstance(lp, dict):
+                    record.update(lp)
+            except Exception:
+                pass
+
+        autofill = dataset_params if isinstance(dataset_params, dict) else {}
+        if file_path:
+            try:
+                inf = infer_raw_file_params(file_path)
+                if inf:
+                    autofill = {**inf, **autofill}
+            except Exception:
+                pass
+
+        persisted = _get_persisted_raw_defaults()
+
+        default_width = str(record.get("width", autofill.get("width", persisted.get("width", 8448))))
+        default_height = str(record.get("height", autofill.get("height", persisted.get("height", 384))))
+        default_bitdepth = str(record.get("bitdepth", record.get("bit_depth", autofill.get("bitdepth", persisted.get("bitdepth", 10)))))
+
+        auto_w_str = str(autofill.get("width", default_width))
+        auto_h_str = str(autofill.get("height", default_height))
 
         self.width_entry = SelectAllLineEdit(default_width)
+        self.width_entry.setPlaceholderText(f"Auto-fill: {auto_w_str}")
         layout.addRow("Width:", self.width_entry)
+
         self.height_entry = SelectAllLineEdit(default_height)
+        self.height_entry.setPlaceholderText(f"Auto-fill: {auto_h_str}")
         layout.addRow("Height:", self.height_entry)
 
         self.bitdepth_var = QComboBox()
@@ -779,12 +856,16 @@ class RawViewer(QWidget):
                     use_saved = False
 
             if not use_saved:
-                dialog = RawParameterDialog(self)
-                dialog = RawParameterDialog(self, initial_params=getattr(self, 'last_params', None) or _get_persisted_raw_defaults())
+                initial_p = getattr(self, 'last_params', None) or _get_persisted_raw_defaults()
+                dialog = RawParameterDialog(self, initial_params=initial_p, file_path=file_path)
                 if dialog.exec_() != QDialog.Accepted:
                     return
                 params = dialog.get_parameters()
                 _save_persisted_raw_defaults(params)
+                try:
+                    save_params_for_path(file_path, params)
+                except Exception:
+                    pass
                 est_bytes = params["width"] * params["height"] * max(1, params["bitdepth"] // 8)
 
         self.last_params = params.copy()
@@ -994,27 +1075,17 @@ class RawViewer(QWidget):
             self.load_raw_file()
             return
 
-        dialog = RawParameterDialog(self)
-        # Prefer last-used file parameters instead of decoded frame shape,
-        # which may already be wrong when user wants to fix configuration.
-        try:
-            p = self.last_params or {}
-            w = int(p.get("width", self.raw_data.shape[1] if self.raw_data is not None else 8448))
-            h = int(p.get("height", self.raw_data.shape[0] if self.raw_data is not None else 384))
-            bd = int(p.get("bitdepth", self.bitdepth))
-        except Exception:
-            w = self.raw_data.shape[1] if self.raw_data is not None else 8448
-            h = self.raw_data.shape[0] if self.raw_data is not None else 384
-            bd = self.bitdepth
-        dialog.width_entry.setText(str(w))
-        dialog.height_entry.setText(str(h))
-        dialog.bitdepth_var.setCurrentText(str(bd))
-        p = self.last_params or _get_persisted_raw_defaults()
-        dialog = RawParameterDialog(self, initial_params=p)
+        p = self.last_params or get_saved_params_for_file(self.last_file_path) or _get_persisted_raw_defaults()
+        dialog = RawParameterDialog(self, initial_params=p, file_path=self.last_file_path)
 
         if dialog.exec_() == QDialog.Accepted:
             params = dialog.get_parameters()
             _save_persisted_raw_defaults(params)
+            if self.last_file_path:
+                try:
+                    save_params_for_path(self.last_file_path, params)
+                except Exception:
+                    pass
             self.last_params = params.copy()
             # Always force a real reload from disk with the new params.
             file_path = self.last_file_path

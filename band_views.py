@@ -499,9 +499,20 @@ class BandViewsMixin:
         return bool(getattr(self, "ENABLE_1_TO_4_LAYOUT", False))
 
     def _binned_upsample_factor(self, bin_factor):
-        # Use metadata-driven factor when 1:4 is enabled; default 2 for typical binning.
         if not self._is_1_to_4_enabled():
             return 1
+        # If all loaded bands are already binned to the same size (no unbinned / split-stitched bands exist),
+        # upsampling is unnecessary.
+        band_frames = getattr(self, 'band_frames', {}) or {}
+        has_unbinned_or_split = False
+        for k in band_frames.keys():
+            kl = str(k).lower()
+            if 'binned' not in kl:
+                has_unbinned_or_split = True
+                break
+        if not has_unbinned_or_split:
+            return 1
+
         try:
             factor = int(bin_factor) if int(bin_factor) > 1 else 2
         except Exception:
@@ -900,7 +911,12 @@ class BandViewsMixin:
         if self.contrast_max_var.value() != default_max:
             max_val = self.contrast_max_var.value()
 
-        if max_val == min_val:
+        # Scale raw DN min/max to uint8 (0..255) space if frame is uint8 and thresholds are raw DNs
+        if frame.dtype == np.uint8 and default_max > 255.0:
+            min_val = (min_val / default_max) * 255.0
+            max_val = (max_val / default_max) * 255.0
+
+        if max_val <= min_val:
             return frame
 
         enhanced = ((frame.astype(np.float32) - min_val) / (max_val - min_val) * 255)
@@ -1186,11 +1202,11 @@ class BandViewsMixin:
                     raw_frame = frame.copy()
                 else:
                     raw_frame = self.apply_offset(raw_frame, self.band_offsets.get(base, {'x':0, 'y':0})['x'], self.band_offsets.get(base, {'x':0, 'y':0})['y'], crop_y=True)
-                if kind == 'full_binned':
-                    factor = self._binned_upsample_factor(entry.get('bin_factor', 1))
-                    if merge_lr:
-                        frame = self._upsample_frame(frame, factor)
-                        raw_frame = self._upsample_frame(raw_frame, factor)
+                if merge_lr and frame.shape[1] < max_width and frame.shape[1] > 0:
+                    scale = max(1, max_width // frame.shape[1])
+                    if scale > 1:
+                        frame = self._upsample_frame(frame, scale)
+                        raw_frame = self._upsample_frame(raw_frame, scale)
                 display_frame = self.apply_contrast_enhancement(frame) if enhance else frame.copy()
 
                 # pad to max_width so vertical stacking aligns

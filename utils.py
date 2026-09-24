@@ -432,21 +432,32 @@ def _infer_bit_depth_from_band_files(folder, width, effective_height=None, raw_h
         if '.band' in name:
             parts = name.split('.band')
             suffix = parts[1] if len(parts) > 1 else ""
-            if suffix.endswith('2') and len(suffix) > 1:
+            if suffix.endswith('4') and len(suffix) > 1:
                 variant = "binned"
+                bin_factor = 4
+            elif (suffix.endswith('2') and len(suffix) > 1) or 'binned' in suffix.lower():
+                variant = "binned"
+                bin_factor = 2
             elif suffix.endswith(('0', '1')) and len(suffix) > 1 and suffix[-2].isdigit():
                 variant = "split"
+                bin_factor = 1
+            else:
+                bin_factor = 1
         elif any(name.lower().endswith(x) for x in ('_left.raw', '_right.raw', '_left.bin', '_right.bin')):
             variant = "split"
+            bin_factor = 1
         elif any(name.lower().endswith(x) for x in ('_binned.raw', '_binned.bin')):
             variant = "binned"
+            bin_factor = 2
+        else:
+            bin_factor = 1
 
         for h_test in heights_to_try:
             frame_w = width_i
             frame_h = h_test
             if variant == "binned":
-                frame_w = max(1, width_i // 2)
-                frame_h = max(1, h_test // 2)
+                frame_w = max(1, width_i // bin_factor)
+                frame_h = max(1, h_test // bin_factor)
             elif variant == "split":
                 frame_w = max(1, width_i // 2)
 

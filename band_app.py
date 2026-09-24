@@ -42,12 +42,13 @@ class LoadWorker(QThread):
     finished = pyqtSignal(dict)
     error = pyqtSignal(str)
     progress = pyqtSignal(int) # Emit progress percentage
-    def __init__(self, folder, width, height, bitdepth, parent=None):
+    def __init__(self, folder, width, height, bitdepth, parent=None, band_binning=None):
         super().__init__(parent)
         self.folder = folder
         self.width = width
         self.height = height
         self.bitdepth = bitdepth
+        self.band_binning = band_binning or (getattr(parent, 'band_binning', {}) if parent else {})
     def run(self):
         try:
             self.progress.emit(0) # Start
@@ -205,13 +206,19 @@ class LoadWorker(QThread):
             # This supports unprocessed bandx files and any band naming convention
             band_files = {}  # {band_id: {variant: path, ...}}
 
+            ignored_exts = ('.hdr', '.meta', '.json', '.log', '.txt', '.xml', '.md', '.nfo', '.ini', '.csv', '.png', '.jpg', '.jpeg')
             for f in files:
+                lower = f.lower()
+                if lower.endswith(ignored_exts):
+                    continue
                 if '.band' not in f:
                     continue
                 parts = f.split('.band')
                 if len(parts) != 2 or not parts[1]:
                     continue
                 suffix = parts[1]
+                if suffix.lower().endswith(ignored_exts):
+                    continue
                 fpath = os.path.join(self.folder, f)
                 if not (os.path.exists(fpath) and os.path.getsize(fpath) > 0):
                     continue
@@ -220,12 +227,22 @@ class LoadWorker(QThread):
                 # Only treat 01 or 0/1 as split for NUMERIC band IDs (e.g., band00/band01)
                 # For alphanumeric IDs (e.g., bandx0, bandx1), treat as separate raw bands
 
-                if suffix.endswith('2') and len(suffix) > 1:
-                    # Binned variant: suffix = "02", "12", "x2", etc.
-                    band_id = suffix[:-1]  # Remove trailing '2'
+                if suffix.endswith('4') and len(suffix) > 1:
+                    # 4x4 Binned variant: suffix = "04", "14", "34", "44", "x4", etc.
+                    band_id = suffix[:-1]  # Remove trailing '4'
                     if band_id not in band_files:
                         band_files[band_id] = {}
                     band_files[band_id]['binned'] = fpath
+                    band_files[band_id]['bin_factor'] = 4
+                elif (suffix.endswith('2') and len(suffix) > 1) or 'binned' in suffix.lower():
+                    # 2x2 Binned variant: suffix = "02", "12", "x2", "2_binned", etc.
+                    band_id = suffix.replace('_binned', '').replace('binned', '')
+                    if band_id.endswith('2') and len(band_id) > 1:
+                        band_id = band_id[:-1]
+                    if band_id not in band_files:
+                        band_files[band_id] = {}
+                    band_files[band_id]['binned'] = fpath
+                    band_files[band_id]['bin_factor'] = 2
                 elif suffix.endswith(('0', '1')) and len(suffix) > 1 and suffix[-2].isdigit():
                     # Split variant: ONLY if previous char is a digit
                     # Examples: "00", "01", "10", "11" (but NOT "x0", "x1")
@@ -244,6 +261,37 @@ class LoadWorker(QThread):
             if not band_files:
                 raise ValueError("No valid band files found in folder.")
 
+            # Suffix-less file-size ratio auto-detection:
+            # Allows binning detection for any file names (e.g. band0, band1, band2, band3) without binned suffixes
+            all_paths_sizes = {}
+            for b_id, v_dict in band_files.items():
+                for k, p in v_dict.items():
+                    if k in ('raw', 'binned') and isinstance(p, str) and os.path.exists(p):
+                        try:
+                            all_paths_sizes[p] = os.path.getsize(p)
+                        except Exception:
+                            pass
+
+            if all_paths_sizes:
+                max_fsize = max(all_paths_sizes.values())
+                for b_id, v_dict in list(band_files.items()):
+                    if 'raw' in v_dict and 'bin_factor' not in v_dict:
+                        fpath = v_dict['raw']
+                        fsize = all_paths_sizes.get(fpath, 0)
+                        if fsize > 0 and max_fsize > 0 and max_fsize > fsize:
+                            ratio = max_fsize / float(fsize)
+                            bf = 1
+                            if 3.0 <= ratio <= 5.5:
+                                bf = 2
+                            elif 12.0 <= ratio <= 20.0:
+                                bf = 4
+                            elif 50.0 <= ratio <= 75.0:
+                                bf = 8
+                            if bf > 1:
+                                v_dict['binned'] = fpath
+                                v_dict['bin_factor'] = bf
+                                del v_dict['raw']
+
             # Load bands with priority: raw > binned > split
             sorted_ids = sorted(band_files.keys(), key=lambda x: (len(x), x))
             for band_idx, band_id in enumerate(sorted_ids):
@@ -256,6 +304,12 @@ class LoadWorker(QThread):
                 self.progress.emit(base_progress)
 
                 variants = band_files[band_id]
+                band_binning = getattr(self, 'band_binning', {}) or {}
+                b_info = band_binning.get(band_id) or band_binning.get(band_key) or {}
+                custom_w = b_info.get("width")
+                custom_h = b_info.get("height")
+                bx = b_info.get("bx", 1)
+                by = b_info.get("by", 1)
 
                 # Load raw (highest priority)
                 if 'raw' in variants:
@@ -268,10 +322,22 @@ class LoadWorker(QThread):
                             return
                         time.sleep(0.005)
                         self.progress.emit(int((base_progress + 1 + (sub_step * 0.8)) * 0.8))
-                    band_frames[band_key] = LazyFrames(fpath, self.width, self.height, self.bitdepth)
+
+                    if custom_w and custom_h:
+                        frame_w = int(custom_w)
+                        frame_h = int(custom_h)
+                    elif bx > 1 or by > 1:
+                        frame_w = max(1, self.width // bx)
+                        frame_h = max(1, self.height // by)
+                    else:
+                        frame_w = self.width
+                        frame_h = self.height
+
+                    band_frames[band_key] = LazyFrames(fpath, frame_w, frame_h, self.bitdepth)
                     self.progress.emit(int((base_progress + 5) * 0.8))
                 elif 'binned' in variants:
                     fpath = variants['binned']
+                    bf = int(variants.get('bin_factor', 2)) or 2
                     files_checked.append(fpath)
                     self.progress.emit(int((base_progress + 1) * 0.8))
                     for sub_step in range(5):
@@ -280,7 +346,18 @@ class LoadWorker(QThread):
                             return
                         time.sleep(0.005)
                         self.progress.emit(int((base_progress + 1 + (sub_step * 0.8)) * 0.8))
-                    band_frames[f"{band_key}_binned"] = LazyFrames(fpath, self.width // 2, self.height // 2, self.bitdepth)
+
+                    if custom_w and custom_h:
+                        frame_w = int(custom_w)
+                        frame_h = int(custom_h)
+                    elif bx > 1 or by > 1:
+                        frame_w = max(1, self.width // bx)
+                        frame_h = max(1, self.height // by)
+                    else:
+                        frame_w = max(1, self.width // bf)
+                        frame_h = max(1, (int(getattr(self, 'raw_height', self.height)) or self.height) // bf)
+
+                    band_frames[f"{band_key}_binned"] = LazyFrames(fpath, frame_w, frame_h, self.bitdepth)
                     self.progress.emit(int((base_progress + 5) * 0.8))
                 else:
                     # Load split variants if available
@@ -345,6 +422,9 @@ class LoadWorker(QThread):
                     if 'binned' in vn or ('bin' in vn and re.search(r'bin\b', vn) and not re.search(r'bin(?:ned)?(?:[_\-]?\d+)', vn)):
                         explicit_binned_present = True
                     self.progress.emit(int((80 + (idx * 2) + int((j + 1) / len(variants) * 2)) * 0.8)) # sub
+                bf_from_files = band_files.get(base.replace('b', '', 1) if base.startswith('b') else base, {}).get('bin_factor', 1)
+                if bf_from_files > bin_factor:
+                    bin_factor = bf_from_files
                 if explicit_binned_present and bin_factor == 1:
                     bin_factor = 2
                 is_binned = (bin_factor > 1) or explicit_binned_present
@@ -763,14 +843,14 @@ class BandStitchProApp(BandViewsMixin, QWidget):
         self.bitdepth_var.setCurrentText(str(bit_depth_i))
         self._sync_contrast_range_to_bitdepth(clamp_only=True)
 
-    def _build_parameter_dialog(self, folder=None):
+    def _build_parameter_dialog(self, folder=None, initial_params=None):
         inferred = {}
         if folder:
             try:
                 inferred = infer_dataset_image_params(folder)
             except Exception:
                 inferred = {}
-        return ParameterDialog(self, dataset_params=inferred, folder=folder)
+        return ParameterDialog(self, dataset_params=inferred, folder=folder, initial_params=initial_params)
     def save_state(self):
         band_enabled_states = {}
         for key, cb in self.band_enabled.items():
@@ -833,6 +913,7 @@ class BandStitchProApp(BandViewsMixin, QWidget):
             'viewer_states': safe_viewer_states,
             'flip_flags': self.flip_flags,
             'bands_info': getattr(self, 'bands_info', {}),
+            'band_binning': getattr(self, 'band_binning', {}),
             'band_enabled': band_enabled_states,
             'view_tabs': {name: bool(cb.isChecked()) for name, cb in getattr(self, 'view_checkboxes', {}).items()},
             # Add more states as needed (e.g., viewer_states if persistent)
@@ -866,6 +947,7 @@ class BandStitchProApp(BandViewsMixin, QWidget):
             print(f"Error loading folder in load_state: {e}")
         # Safely set params with hasattr checks
         self.bitdepth = data.get('bitdepth', 10)
+        self.band_binning = data.get('band_binning', {})
         saved_width = data.get('width', '8448')
         saved_tdi_stage = int(data.get('tdi_stage', 0) or 0)
         saved_height = data.get('height', '384')
@@ -1123,18 +1205,38 @@ class BandStitchProApp(BandViewsMixin, QWidget):
         self.left_scroll.setWidgetResizable(True)
         self.left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.left_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.left_scroll.setStyleSheet("""
+            QScrollArea { border: none; background: transparent; }
+            QScrollBar:vertical {
+                width: 10px;
+                background: rgba(0, 0, 0, 0.15);
+                margin: 0px;
+                border-radius: 4px;
+            }
+            QScrollBar::handle:vertical {
+                background: rgba(255, 255, 255, 0.25);
+                min-height: 20px;
+                border-radius: 4px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: rgba(255, 255, 255, 0.4);
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+        """)
         self.left_panel = QWidget()
         left_layout = QVBoxLayout()
-        left_layout.setContentsMargins(4, 4, 4, 4)
+        left_layout.setContentsMargins(6, 6, 16, 6)
         left_layout.setSpacing(4)
         self.left_panel.setLayout(left_layout)
         self.left_scroll.setWidget(self.left_panel)
         if platform.system() == "Windows":
-            self.left_scroll.setMinimumWidth(460)
-            self.left_scroll.setMaximumWidth(560)
+            self.left_scroll.setMinimumWidth(480)
+            self.left_scroll.setMaximumWidth(580)
         else:
-            self.left_scroll.setMinimumWidth(420)
-            self.left_scroll.setMaximumWidth(560)
+            self.left_scroll.setMinimumWidth(440)
+            self.left_scroll.setMaximumWidth(580)
         self.left_scroll.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         main_layout.addWidget(self.left_scroll)
         views_container = QWidget()
@@ -2081,6 +2183,7 @@ class BandStitchProApp(BandViewsMixin, QWidget):
             dialog = self._build_parameter_dialog(folder)
             if dialog.exec_() == QDialog.Accepted:
                 params = dialog.get_parameters()
+                self.band_binning = params.get("band_binning", {})
                 self._apply_image_params(params["width"], params["raw_height"], params["bit_depth"], params["tdi_stage"])
                 # Persist folder default silently
                 try:
@@ -2090,6 +2193,7 @@ class BandStitchProApp(BandViewsMixin, QWidget):
                         'raw_height': int(params["raw_height"]),
                         'bit_depth': int(params["bit_depth"]),
                         'tdi_stage': int(params["tdi_stage"]),
+                        'band_binning': self.band_binning
                     }, as_default=True)
                 except Exception:
                     pass
@@ -2153,6 +2257,7 @@ class BandStitchProApp(BandViewsMixin, QWidget):
             dialog = self._build_parameter_dialog(folder)
             if dialog.exec_() == QDialog.Accepted:
                 params = dialog.get_parameters()
+                self.band_binning = params.get("band_binning", {})
                 self._apply_image_params(params["width"], params["raw_height"], params["bit_depth"], params["tdi_stage"])
                 try:
                     save_params_for_path(folder, {
@@ -2161,6 +2266,7 @@ class BandStitchProApp(BandViewsMixin, QWidget):
                         'raw_height': int(params["raw_height"]),
                         'bit_depth': int(params["bit_depth"]),
                         'tdi_stage': int(params["tdi_stage"]),
+                        'band_binning': self.band_binning
                     }, as_default=True)
                 except Exception:
                     pass
@@ -2743,7 +2849,8 @@ class BandStitchProApp(BandViewsMixin, QWidget):
                 "green": self.green_band_var.currentText(),
                 "blue": self.blue_band_var.currentText()
             },
-            "band_offsets": self.band_offsets
+            "band_offsets": self.band_offsets,
+            "band_binning": getattr(self, 'band_binning', {})
         }
 
         try:
@@ -2792,6 +2899,7 @@ class BandStitchProApp(BandViewsMixin, QWidget):
                     bit_depth = inferred.get("bit_depth", 10)
                 except Exception:
                     bit_depth = 10
+            self.band_binning = params.get("band_binning", {})
             self._apply_image_params(width, raw_height, bit_depth, tdi_stage)
             self.gap_var.setValue(params.get("band_gap", 0))
             self.matrix_size_var.setValue(params.get("matrix_size", 3))
@@ -2874,9 +2982,18 @@ class BandStitchProApp(BandViewsMixin, QWidget):
             QMessageBox.critical(self, "Error", "No folder selected. Please select a folder first.")
             return
         try:
-            dialog = self._build_parameter_dialog(self.current_folder)
+            current_p = {
+                'width': self.width_entry.text(),
+                'raw_height': getattr(self, 'raw_height', 384),
+                'height': self.height_entry.text(),
+                'tdi_stage': getattr(self, 'tdi_stage', 0),
+                'bit_depth': self.bitdepth_var.currentText(),
+                'band_binning': getattr(self, 'band_binning', {})
+            }
+            dialog = self._build_parameter_dialog(self.current_folder, initial_params=current_p)
             if dialog.exec_() == QDialog.Accepted:
                 params = dialog.get_parameters()
+                self.band_binning = params.get("band_binning", {})
                 self._apply_image_params(params["width"], params["raw_height"], params["bit_depth"], params["tdi_stage"])
                 if self.current_folder:
                     try:
@@ -2886,6 +3003,7 @@ class BandStitchProApp(BandViewsMixin, QWidget):
                             "raw_height": int(getattr(self, 'raw_height', self.height_entry.text()) or self.height_entry.text()),
                             "bit_depth": int(self.bitdepth_var.currentText()),
                             "tdi_stage": int(getattr(self, 'tdi_stage', 0) or 0),
+                            "band_binning": self.band_binning
                         }, as_default=True)
                     except Exception:
                         pass
@@ -3174,6 +3292,10 @@ class BandStitchProApp(BandViewsMixin, QWidget):
 
     def load_folder_data(self, is_reload=False):
         self._is_reloading = is_reload
+        if hasattr(self, 'view_cache'):
+            self.view_cache.clear()
+        if is_reload:
+            self.band_frames = {}
         if getattr(self, '_is_closing', False):
             return
         if not getattr(self, 'current_folder', None):
@@ -3206,7 +3328,7 @@ class BandStitchProApp(BandViewsMixin, QWidget):
             self._stop_thread(getattr(self, 'view_worker', None))
         except Exception:
             pass
-        self.worker = LoadWorker(self.current_folder, width, height, self.bitdepth, self)
+        self.worker = LoadWorker(self.current_folder, width, height, self.bitdepth, self, band_binning=getattr(self, 'band_binning', {}))
         self.worker._load_generation = self._load_generation
         self.worker.finished.connect(self.on_load_finished)
         self.worker.error.connect(self.on_load_error)

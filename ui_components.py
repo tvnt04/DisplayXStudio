@@ -18,6 +18,7 @@ from PIL import Image
 import traceback
 
 import concurrent.futures
+import os
 import re
 
 
@@ -2393,62 +2394,76 @@ class SelectAllLineEdit(QLineEdit):
 
 
 class ParameterDialog(QDialog):
-    def __init__(self, parent=None, dataset_params=None, folder=None):
+    def __init__(self, parent=None, dataset_params=None, folder=None, initial_params=None):
         super().__init__(parent)
         self.folder = folder or (getattr(parent, "current_folder", None) if parent else None)
         self.setWindowTitle("Enter Image Parameters")
         layout = QFormLayout()
         self.setLayout(layout)
 
-        default_width = "8448"
-        default_raw_height = "384"
-        default_tdi_stage = "0"
-        default_bitdepth = "10"
-        try:
-            if parent is not None:
-                if hasattr(parent, "width_entry"):
-                    default_width = str(parent.width_entry.text())
-                if hasattr(parent, "raw_height"):
-                    default_raw_height = str(int(getattr(parent, "raw_height", 384) or 384))
-                elif hasattr(parent, "height_entry"):
-                    default_raw_height = str(parent.height_entry.text())
-                if hasattr(parent, "tdi_stage"):
-                    default_tdi_stage = str(int(getattr(parent, "tdi_stage", 0) or 0))
-                if hasattr(parent, "bitdepth_var"):
-                    default_bitdepth = str(parent.bitdepth_var.currentText())
-        except Exception:
-            pass
+        record = {}
+        if isinstance(initial_params, dict) and initial_params:
+            record.update(initial_params)
 
-        if isinstance(dataset_params, dict):
+        if self.folder:
             try:
-                if dataset_params.get("width"):
-                    default_width = str(int(dataset_params["width"]))
-                if dataset_params.get("raw_height"):
-                    default_raw_height = str(int(dataset_params["raw_height"]))
-                if "tdi_stage" in dataset_params:
-                    default_tdi_stage = str(int(dataset_params["tdi_stage"]))
-                if dataset_params.get("bit_depth"):
-                    default_bitdepth = str(int(dataset_params["bit_depth"]))
+                from utils import get_saved_params_for_file
+                saved_p = get_saved_params_for_file(self.folder)
+                if isinstance(saved_p, dict) and saved_p:
+                    for k, v in saved_p.items():
+                        if k not in record or not record[k]:
+                            record[k] = v
             except Exception:
                 pass
 
-        self.width_entry = QLineEdit(default_width)
+        if parent is not None and not record and not self.folder:
+            try:
+                if hasattr(parent, "width_entry") and parent.width_entry.text():
+                    record["width"] = parent.width_entry.text()
+                if hasattr(parent, "raw_height") and getattr(parent, "raw_height", None):
+                    record["raw_height"] = str(getattr(parent, "raw_height"))
+                elif hasattr(parent, "height_entry") and parent.height_entry.text():
+                    record["raw_height"] = parent.height_entry.text()
+                if hasattr(parent, "tdi_stage") and getattr(parent, "tdi_stage", None) is not None:
+                    record["tdi_stage"] = str(getattr(parent, "tdi_stage"))
+                if hasattr(parent, "bitdepth_var"):
+                    record["bit_depth"] = parent.bitdepth_var.currentText()
+            except Exception:
+                pass
+
+        autofill = dataset_params if isinstance(dataset_params, dict) else {}
+
+        default_width = str(record.get("width", autofill.get("width", "8448")))
+        default_raw_height = str(record.get("raw_height", record.get("height", autofill.get("raw_height", "384"))))
+        default_tdi_stage = str(record.get("tdi_stage", autofill.get("tdi_stage", "0")))
+        default_bitdepth = str(record.get("bit_depth", record.get("bitdepth", autofill.get("bit_depth", "10"))))
+
+        auto_w_str = str(autofill.get("width", default_width))
+        auto_h_str = str(autofill.get("raw_height", default_raw_height))
+
         self.width_entry = SelectAllLineEdit(default_width)
+        self.width_entry.setPlaceholderText(f"Auto-fill: {auto_w_str}")
         layout.addRow("Width:", self.width_entry)
 
-        self.height_entry = QLineEdit(default_raw_height)
         self.height_entry = SelectAllLineEdit(default_raw_height)
+        self.height_entry.setPlaceholderText(f"Auto-fill: {auto_h_str}")
         layout.addRow("Height (RegionHeight):", self.height_entry)
 
         self.tdi_stage_var = QComboBox()
         self.tdi_stage_var.addItems(["0", "2", "4", "8", "16", "32"])
-        self.tdi_stage_var.setCurrentText(default_tdi_stage if default_tdi_stage in ["0", "2", "4", "8", "16", "32"] else "0")
+        if default_tdi_stage in ["0", "2", "4", "8", "16", "32"]:
+            self.tdi_stage_var.setCurrentText(default_tdi_stage)
+        else:
+            self.tdi_stage_var.setCurrentText("0")
         layout.addRow("TDI Stage:", self.tdi_stage_var)
 
         self.bitdepth_var = QComboBox()
         supported_bitdepths = ["8", "10", "12", "16", "32"]
         self.bitdepth_var.addItems(supported_bitdepths)
-        self.bitdepth_var.setCurrentText(default_bitdepth if default_bitdepth in supported_bitdepths else "10")
+        if default_bitdepth in supported_bitdepths:
+            self.bitdepth_var.setCurrentText(default_bitdepth)
+        else:
+            self.bitdepth_var.setCurrentText("10")
         layout.addRow("Bit Depth:", self.bitdepth_var)
 
         self.effective_height_label = QLabel()
@@ -2456,10 +2471,125 @@ class ParameterDialog(QDialog):
         layout.addRow("Computed Band Height:", self.effective_height_label)
         self.height_entry.textChanged.connect(self._update_effective_height_hint)
         self.tdi_stage_var.currentTextChanged.connect(self._update_effective_height_hint)
-        self.width_entry.textChanged.connect(self._auto_detect_bitdepth_on_edit)
-        self.height_entry.textChanged.connect(self._auto_detect_bitdepth_on_edit)
-        self.tdi_stage_var.currentTextChanged.connect(self._auto_detect_bitdepth_on_edit)
+        self.width_entry.textChanged.connect(self._update_all_derived_dimensions)
+        self.height_entry.textChanged.connect(self._update_all_derived_dimensions)
+        self.tdi_stage_var.currentTextChanged.connect(self._update_all_derived_dimensions)
         self._update_effective_height_hint()
+
+        # Collapsible Advanced Section
+        self.adv_toggle_btn = QToolButton()
+        self.adv_toggle_btn.setCheckable(True)
+        self.adv_toggle_btn.setChecked(False)
+        self.adv_toggle_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.adv_toggle_btn.setArrowType(Qt.RightArrow)
+        self.adv_toggle_btn.setText(" Advanced Band Binning & Resolution")
+        self.adv_toggle_btn.setStyleSheet("QToolButton { font-weight: bold; border: none; background: transparent; padding: 4px; }")
+        self.adv_toggle_btn.toggled.connect(self._on_adv_toggled)
+
+        layout.addRow(self.adv_toggle_btn)
+
+        self.adv_widget = QWidget()
+        adv_layout = QVBoxLayout()
+        self.adv_widget.setLayout(adv_layout)
+
+        self.band_rows = {}
+        self._updating_table_dims = False
+        discovered_bands = self._discover_folder_bands()
+        saved_binning = record.get("band_binning", {}) if isinstance(record, dict) else {}
+
+        if discovered_bands:
+            table = QTableWidget()
+            table.setColumnCount(4)
+            table.setHorizontalHeaderLabels(["Band", "Binning Mode", "Width (px)", "Height (px)"])
+            table.setRowCount(len(discovered_bands))
+            table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+            table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+            table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+            table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
+            table.verticalHeader().setVisible(False)
+            table.setSelectionMode(QAbstractItemView.NoSelection)
+
+            header_h = table.horizontalHeader().height() or 28
+            row_h = 32
+            needed_h = header_h + (len(discovered_bands) * row_h) + 12
+            table.setMinimumHeight(needed_h)
+            table.setMaximumHeight(min(450, needed_h))
+
+            binning_options = [
+                ("1x1 (Full Unbinned)", 1, 1),
+                ("2x2 Binned", 2, 2),
+                ("4x4 Binned", 4, 4),
+                ("8x8 Binned", 8, 8),
+                ("4x1 Horiz Binned", 4, 1),
+                ("2x1 Horiz Binned", 2, 1),
+                ("Split Left/Right", 2, 1),
+                ("Custom (W x H)", 0, 0)
+            ]
+
+            for row_idx, (b_id, auto_mode, b_size) in enumerate(discovered_bands):
+                name_item = QTableWidgetItem(f"b{b_id}")
+                name_item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+                table.setItem(row_idx, 0, name_item)
+
+                combo = QComboBox()
+                for label, bx, by in binning_options:
+                    combo.addItem(label, (bx, by))
+
+                if auto_mode == 4:
+                    combo.setCurrentIndex(2)
+                elif auto_mode == 2:
+                    combo.setCurrentIndex(1)
+                else:
+                    combo.setCurrentIndex(0)
+
+                w_spin = QSpinBox()
+                w_spin.setRange(1, 1000000)
+
+                h_spin = QSpinBox()
+                h_spin.setRange(1, 1000000)
+
+                table.setCellWidget(row_idx, 1, combo)
+                table.setCellWidget(row_idx, 2, w_spin)
+                table.setCellWidget(row_idx, 3, h_spin)
+
+                self.band_rows[b_id] = {
+                    "combo": combo,
+                    "w_spin": w_spin,
+                    "h_spin": h_spin
+                }
+
+                # Connect signals
+                combo.currentIndexChanged.connect(lambda idx, bid=b_id: self._on_combo_changed(bid))
+                w_spin.valueChanged.connect(lambda val, bid=b_id: self._on_spin_changed(bid))
+                h_spin.valueChanged.connect(lambda val, bid=b_id: self._on_spin_changed(bid))
+
+            adv_layout.addWidget(table)
+            self._update_all_derived_dimensions()
+
+            # Restore saved per-band dimensions if present
+            if saved_binning:
+                for b_id, info in saved_binning.items():
+                    if b_id in self.band_rows:
+                        row = self.band_rows[b_id]
+                        sw = info.get("width")
+                        sh = info.get("height")
+                        sbx = info.get("bx")
+                        sby = info.get("by")
+                        if sw and sh:
+                            row["w_spin"].setValue(int(sw))
+                            row["h_spin"].setValue(int(sh))
+                        if sbx is not None and sby is not None:
+                            for idx, (lbl, bx, by) in enumerate(binning_options):
+                                if bx == sbx and by == sby:
+                                    row["combo"].setCurrentIndex(idx)
+                                    break
+        else:
+            no_bands_lbl = QLabel("No folder selected or no band files discovered.")
+            no_bands_lbl.setStyleSheet("color: #777;")
+            adv_layout.addWidget(no_bands_lbl)
+
+        self.adv_widget.setVisible(False)
+        layout.addRow(self.adv_widget)
 
         buttons = QHBoxLayout()
         ok_btn = QPushButton("OK")
@@ -2478,23 +2608,159 @@ class ParameterDialog(QDialog):
         self.width_entry.setFocus()
         QTimer.singleShot(0, self.width_entry.selectAll)
 
-    def _auto_detect_bitdepth_on_edit(self):
-        if not getattr(self, "folder", None):
+    def _on_adv_toggled(self, checked):
+        self.adv_toggle_btn.setArrowType(Qt.DownArrow if checked else Qt.RightArrow)
+        self.adv_widget.setVisible(checked)
+        QTimer.singleShot(0, self.adjustSize)
+
+    def _discover_folder_bands(self):
+        if not self.folder or not os.path.exists(self.folder):
+            return []
+        try:
+            ignored_exts = ('.hdr', '.meta', '.json', '.log', '.txt', '.xml', '.md', '.nfo', '.ini', '.csv', '.png', '.jpg', '.jpeg', '.ephemeris')
+            files = [f for f in os.listdir(self.folder) if os.path.isfile(os.path.join(self.folder, f))]
+            band_files = []
+            for f in files:
+                lower = f.lower()
+                if lower.endswith(ignored_exts):
+                    continue
+                if '.band' not in lower:
+                    continue
+                sz = os.path.getsize(os.path.join(self.folder, f))
+                if sz > 0:
+                    band_files.append((f, sz))
+            if not band_files:
+                return []
+
+            max_size = max(sz for _, sz in band_files)
+
+            result = []
+            seen_bases = set()
+            for name, sz in sorted(band_files, key=lambda x: x[0]):
+                base = name
+                if '.band' in name:
+                    base = name.split('.band')[1]
+                base = re.sub(r'^_?band', '', base, flags=re.IGNORECASE)
+                base = re.sub(r'_(?:left|right|binned\d*)$', '', base, flags=re.IGNORECASE)
+                if base.endswith(('2', '4')) and len(base) > 1:
+                    base = base[:-1]
+                if not base:
+                    base = name
+                if base in seen_bases:
+                    continue
+                seen_bases.add(base)
+
+                ratio = max(1.0, max_size / float(sz)) if sz > 0 else 1.0
+                if ratio >= 12.0 or name.lower().endswith('4'):
+                    auto_mode = 4
+                elif ratio >= 2.5 or 'binned' in name.lower() or name.lower().endswith('2'):
+                    auto_mode = 2
+                else:
+                    auto_mode = 1
+
+                result.append((base, auto_mode, sz))
+            return result
+        except Exception:
+            return []
+
+    def _on_combo_changed(self, b_id):
+        if self._updating_table_dims:
+            return
+        row = self.band_rows.get(b_id)
+        if not row:
+            return
+        combo = row["combo"]
+        w_spin = row["w_spin"]
+        h_spin = row["h_spin"]
+        data = combo.currentData()
+        if not data or data == (0, 0):
+            return
+        bx, by = data
+        try:
+            w_ref = int(self.width_entry.text())
+        except Exception:
+            w_ref = 8448
+        try:
+            rh_ref = int(self.height_entry.text())
+        except Exception:
+            rh_ref = 384
+        try:
+            tdi = int(self.tdi_stage_var.currentText())
+        except Exception:
+            tdi = 0
+        eff_h = rh_ref if tdi == 0 else max(1, rh_ref // tdi)
+
+        self._updating_table_dims = True
+        w_spin.setValue(max(1, w_ref // bx))
+        h_spin.setValue(max(1, eff_h // by))
+        self._updating_table_dims = False
+
+    def _on_spin_changed(self, b_id):
+        if self._updating_table_dims:
+            return
+        row = self.band_rows.get(b_id)
+        if not row:
+            return
+        combo = row["combo"]
+        w_spin = row["w_spin"]
+        h_spin = row["h_spin"]
+        data = combo.currentData()
+        if not data or data == (0, 0):
+            return
+        bx, by = data
+        try:
+            w_ref = int(self.width_entry.text())
+        except Exception:
+            w_ref = 8448
+        try:
+            rh_ref = int(self.height_entry.text())
+        except Exception:
+            rh_ref = 384
+        try:
+            tdi = int(self.tdi_stage_var.currentText())
+        except Exception:
+            tdi = 0
+        eff_h = rh_ref if tdi == 0 else max(1, rh_ref // tdi)
+
+        expected_w = max(1, w_ref // bx)
+        expected_h = max(1, eff_h // by)
+
+        if w_spin.value() != expected_w or h_spin.value() != expected_h:
+            self._updating_table_dims = True
+            combo.setCurrentIndex(combo.count() - 1)
+            self._updating_table_dims = False
+
+    def _update_all_derived_dimensions(self):
+        if self._updating_table_dims:
             return
         try:
-            import os
-            if not os.path.exists(self.folder):
-                return
-            w = int(self.width_entry.text())
-            rh = int(self.height_entry.text())
-            tdi = int(self.tdi_stage_var.currentText())
-            eff_h = rh if tdi == 0 else max(1, rh // tdi)
-            from utils import _infer_bit_depth_from_band_files
-            bd = _infer_bit_depth_from_band_files(self.folder, width=w, effective_height=eff_h, raw_height=rh)
-            if bd:
-                self.bitdepth_var.setCurrentText(str(bd))
+            w_ref = int(self.width_entry.text())
         except Exception:
-            pass
+            w_ref = 8448
+        try:
+            rh_ref = int(self.height_entry.text())
+        except Exception:
+            rh_ref = 384
+        try:
+            tdi = int(self.tdi_stage_var.currentText())
+        except Exception:
+            tdi = 0
+
+        eff_h = rh_ref if tdi == 0 else max(1, rh_ref // tdi)
+
+        self._updating_table_dims = True
+        for b_id, row in self.band_rows.items():
+            combo = row["combo"]
+            w_spin = row["w_spin"]
+            h_spin = row["h_spin"]
+            data = combo.currentData()
+            if data and data != (0, 0):
+                bx, by = data
+                b_w = max(1, w_ref // bx)
+                b_h = max(1, eff_h // by)
+                w_spin.setValue(b_w)
+                h_spin.setValue(b_h)
+        self._updating_table_dims = False
 
     def _update_effective_height_hint(self):
         try:
@@ -2522,10 +2788,27 @@ class ParameterDialog(QDialog):
             raw_height = 384
         tdi_stage = int(self.tdi_stage_var.currentText())
         eff_height = raw_height if tdi_stage == 0 else max(1, raw_height // tdi_stage)
+
+        band_binning = {}
+        for b_id, row in self.band_rows.items():
+            combo = row["combo"]
+            w_spin = row["w_spin"]
+            h_spin = row["h_spin"]
+            data = combo.currentData() or (1, 1)
+            bx, by = data
+            band_binning[b_id] = {
+                "bx": bx,
+                "by": by,
+                "width": w_spin.value(),
+                "height": h_spin.value()
+            }
+
         return {
             "width": self.width_entry.text(),
             "height": str(eff_height),
             "raw_height": raw_height,
             "bit_depth": int(self.bitdepth_var.currentText()),
-            "tdi_stage": tdi_stage
+            "tdi_stage": tdi_stage,
+            "band_binning": band_binning
         }
+

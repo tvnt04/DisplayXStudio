@@ -79,6 +79,7 @@ class MagnifierGraphicsView(QGraphicsView):
         self.magnifier_radius = 100
         self.mouse_zoom_enabled = False
         self.magnifier_zoom = 8.0
+        self.magnifier_mode = "Off"
         self.torch_enabled = False
         self.dragging_magnifier = False
         self.resizing_magnifier = False
@@ -90,6 +91,7 @@ class MagnifierGraphicsView(QGraphicsView):
         self.cached_source_scene = None # Cache source scene rect as tuple (left, top, width, height)
         self.cached_zoom = None # Cache zoom level
         self.cached_torch = None # Cache torch state
+        self.cached_magnifier_mode = None
         self.setMouseTracking(True)
         self.setDragMode(QGraphicsView.NoDrag)
         self.setRenderHints(QPainter.Antialiasing | QPainter.SmoothPixmapTransform)
@@ -209,11 +211,15 @@ class MagnifierGraphicsView(QGraphicsView):
         self.cached_pixmap = None # Invalidate cache
         self.cached_source_scene = None
         self.viewport().update()
-    def toggle_torch(self, enabled):
-        self.torch_enabled = enabled
+    def set_magnifier_mode(self, mode):
+        self.magnifier_mode = str(mode)
+        self.torch_enabled = (mode == "Torch")
         self.cached_pixmap = None # Invalidate cache
         self.cached_source_scene = None
         self.viewport().update()
+    def toggle_torch(self, enabled):
+        mode = "Torch" if enabled else "Off"
+        self.set_magnifier_mode(mode)
     def set_magnifier_zoom(self, value):
         self.magnifier_zoom = value / 10.0
         self.cached_pixmap = None # Invalidate cache
@@ -1231,7 +1237,7 @@ class MagnifierGraphicsView(QGraphicsView):
                     if (self.cached_pixmap and
                         self.cached_source_scene == source_scene_tuple and
                         self.cached_zoom == self.magnifier_zoom and
-                        self.cached_torch == self.torch_enabled):
+                        getattr(self, 'cached_magnifier_mode', 'Off') == self.magnifier_mode):
                         scaled_pixmap = self.cached_pixmap
                     else:
                         target_width = int(2 * radius)
@@ -1242,26 +1248,60 @@ class MagnifierGraphicsView(QGraphicsView):
                                             source_scene_rect, Qt.KeepAspectRatio)
                         temp_painter.end()
                         scaled_pixmap = temp_pixmap
-                        if self.torch_enabled:
+                        if self.magnifier_mode in ("Contrast", "Torch"):
                             qimg = temp_pixmap.toImage()
                             sub_image = qimage_to_pil(qimg)
                             img_array = np.array(sub_image)
                             if img_array.size == 0:
                                 scaled_pixmap = QPixmap()
                             else:
+                                parent_viewer = self.parent()
+                                item_rect = QRectF()
+                                if parent_viewer and hasattr(parent_viewer, 'pixmap_item') and parent_viewer.pixmap_item:
+                                    item_rect = parent_viewer.pixmap_item.sceneBoundingRect()
+                                else:
+                                    item_rect = self.scene().sceneRect()
+
+                                valid_scene_rect = source_scene_rect.intersected(item_rect) if not item_rect.isEmpty() else source_scene_rect
+
+                                if not valid_scene_rect.isEmpty() and source_scene_rect.width() > 0 and source_scene_rect.height() > 0:
+                                    rx = (valid_scene_rect.x() - source_scene_rect.x()) / source_scene_rect.width()
+                                    ry = (valid_scene_rect.y() - source_scene_rect.y()) / source_scene_rect.height()
+                                    rw = valid_scene_rect.width() / source_scene_rect.width()
+                                    rh = valid_scene_rect.height() / source_scene_rect.height()
+
+                                    x0 = max(0, int(round(rx * target_width)))
+                                    y0 = max(0, int(round(ry * target_height)))
+                                    x1 = min(target_width, int(round((rx + rw) * target_width)))
+                                    y1 = min(target_height, int(round((ry + rh) * target_height)))
+
+                                    valid_pixels = img_array[y0:y1, x0:x1] if (x1 > x0 and y1 > y0) else img_array
+                                else:
+                                    valid_pixels = img_array
+
+                                if valid_pixels.size == 0:
+                                    valid_pixels = img_array
+
                                 if img_array.ndim == 3 and img_array.shape[2] >= 3: # RGB/RGBA image
                                     rgb = img_array[..., :3]
-                                    min_val = np.min(rgb, axis=(0, 1), keepdims=True)
-                                    max_val = np.max(rgb, axis=(0, 1), keepdims=True)
-                                    scale = np.where(max_val - min_val > 0, 255 / (max_val - min_val + 1e-5), 1)
+                                    v_rgb = valid_pixels[..., :3]
+                                    max_val = np.max(v_rgb, axis=(0, 1), keepdims=True)
+                                    if self.magnifier_mode == "Torch":
+                                        min_val = np.zeros_like(max_val)
+                                    else:
+                                        min_val = np.min(v_rgb, axis=(0, 1), keepdims=True)
+                                    scale = np.where(max_val - min_val > 0, 255.0 / (max_val - min_val + 1e-5), 1.0)
                                     enhanced = ((rgb.astype(np.float32) - min_val) * scale).clip(0, 255).astype(np.uint8)
                                     enhanced_pil = Image.fromarray(enhanced)
                                     qimg_enh = pil_to_qimage(enhanced_pil)
                                     scaled_pixmap = QPixmap.fromImage(qimg_enh)
                                 else: # Grayscale
-                                    min_val = np.min(img_array)
-                                    max_val = np.max(img_array)
-                                    scale = 255 / (max_val - min_val + 1e-5) if max_val - min_val > 0 else 1
+                                    max_val = np.max(valid_pixels)
+                                    if self.magnifier_mode == "Torch":
+                                        min_val = 0.0
+                                    else:
+                                        min_val = np.min(valid_pixels)
+                                    scale = 255.0 / (max_val - min_val + 1e-5) if max_val - min_val > 0 else 1.0
                                     enhanced = ((img_array.astype(np.float32) - min_val) * scale).clip(0, 255).astype(np.uint8)
                                     enhanced_pil = Image.fromarray(enhanced, mode='L')
                                     qimg_enh = pil_to_qimage(enhanced_pil)
@@ -1269,6 +1309,7 @@ class MagnifierGraphicsView(QGraphicsView):
                         self.cached_pixmap = scaled_pixmap
                         self.cached_source_scene = source_scene_tuple
                         self.cached_zoom = self.magnifier_zoom
+                        self.cached_magnifier_mode = self.magnifier_mode
                         self.cached_torch = self.torch_enabled
                     path = QPainterPath()
                     path.addEllipse(center_view, radius, radius)
@@ -1690,10 +1731,27 @@ class GraphicsImageViewer(QWidget):
         _apply_interaction_mode("off")
         self.magnifier_toggle = QCheckBox("Magnifier")
         bottom_bar.addWidget(self.magnifier_toggle)
+
+        # 3-State Magnifier Mode Selector ("Off", "Contrast", "Torch")
+        self.magnifier_mode_combo = QComboBox()
+        self.magnifier_mode_combo.addItems(["Off", "Contrast", "Torch"])
+        self.magnifier_mode_combo.setToolTip("Magnifier mode: Off, Contrast, or Torch")
+        self.magnifier_mode_combo.hide()
+        bottom_bar.addWidget(self.magnifier_mode_combo)
+
+        # Retain torch_toggle for backwards compatibility
         self.torch_toggle = QCheckBox("Torch")
-        bottom_bar.addWidget(self.torch_toggle)
-        self.torch_toggle.setChecked(False)
-        self.torch_toggle.setEnabled(False)  # Only enabled when magnifier is ON
+        self.torch_toggle.hide()
+
+        def _on_magnifier_mode_changed(mode_str):
+            self.torch_toggle.setChecked(mode_str == "Torch")
+            try:
+                self.graphics_view.set_magnifier_mode(mode_str)
+            except Exception:
+                pass
+
+        self.magnifier_mode_combo.currentTextChanged.connect(_on_magnifier_mode_changed)
+
         def _on_magnifier_toggled(checked: bool):
             if checked:
                 # If either tool is active, reject magnifier check and alert the user
@@ -1709,15 +1767,18 @@ class GraphicsImageViewer(QWidget):
                     self.magnifier_toggle.setChecked(False)
                     self.magnifier_toggle.blockSignals(False)
                     return
-            if not checked:
+                self.magnifier_mode_combo.show()
+                self.magnifier_mode_combo.setEnabled(True)
+            else:
+                self.magnifier_mode_combo.blockSignals(True)
+                self.magnifier_mode_combo.setCurrentText("Off")
+                self.magnifier_mode_combo.blockSignals(False)
+                self.magnifier_mode_combo.hide()
                 self.torch_toggle.setChecked(False)
                 try:
-                    self.graphics_view.toggle_torch(False)
+                    self.graphics_view.set_magnifier_mode("Off")
                 except Exception:
                     pass
-            self.torch_toggle.setEnabled(checked)
-            if not checked:
-                self.torch_toggle.setChecked(False)
             try:
                 self.graphics_view.toggle_magnifier(checked)
             except Exception:
@@ -2878,6 +2939,9 @@ class GraphicsImageViewer(QWidget):
         pixmap = QPixmap.fromImage(qimg)
         try:
             self.pixmap_item.setPixmap(pixmap)
+            self.graphics_view.cached_pixmap = None
+            self.graphics_view.cached_source_scene = None
+            self.graphics_view.viewport().update()
             self.pixmap_item.setTransform(QTransform()) # Reset
             self.pixmap_item.setPos(0, 0)
             # Reset frames
@@ -2890,8 +2954,11 @@ class GraphicsImageViewer(QWidget):
                 self._apply_local_rotation()
             else:
                 self._apply_item_transform()
-            # Torch is available only while magnifier is enabled.
-            self.torch_toggle.setEnabled(bool(self.magnifier_toggle.isChecked()))
+            # Torch/Magnifier mode controls are available only while magnifier is enabled.
+            mag_checked = bool(self.magnifier_toggle.isChecked())
+            self.torch_toggle.setEnabled(mag_checked)
+            self.magnifier_mode_combo.setVisible(mag_checked)
+            self.magnifier_mode_combo.setEnabled(mag_checked)
             def _do_fit():
                 try:
                     self.graphics_view.resetTransform()
