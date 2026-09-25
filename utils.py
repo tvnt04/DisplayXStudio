@@ -432,10 +432,11 @@ def _infer_bit_depth_from_band_files(folder, width, effective_height=None, raw_h
         if '.band' in name:
             parts = name.split('.band')
             suffix = parts[1] if len(parts) > 1 else ""
-            if suffix.endswith('4') and len(suffix) > 1:
+            lower_suffix = suffix.lower()
+            if 'binned4' in lower_suffix or 'binned_4' in lower_suffix or '_4x4' in lower_suffix:
                 variant = "binned"
                 bin_factor = 4
-            elif (suffix.endswith('2') and len(suffix) > 1) or 'binned' in suffix.lower():
+            elif 'binned' in lower_suffix or 'binned2' in lower_suffix or 'binned_2' in lower_suffix or '_2x2' in lower_suffix:
                 variant = "binned"
                 bin_factor = 2
             elif suffix.endswith(('0', '1')) and len(suffix) > 1 and suffix[-2].isdigit():

@@ -227,18 +227,15 @@ class LoadWorker(QThread):
                 # Only treat 01 or 0/1 as split for NUMERIC band IDs (e.g., band00/band01)
                 # For alphanumeric IDs (e.g., bandx0, bandx1), treat as separate raw bands
 
-                if suffix.endswith('4') and len(suffix) > 1:
-                    # 4x4 Binned variant: suffix = "04", "14", "34", "44", "x4", etc.
-                    band_id = suffix[:-1]  # Remove trailing '4'
+                lower_suffix = suffix.lower()
+                if 'binned4' in lower_suffix or 'binned_4' in lower_suffix or '_4x4' in lower_suffix:
+                    band_id = suffix.replace('_binned4', '').replace('binned4', '').replace('_binned', '')
                     if band_id not in band_files:
                         band_files[band_id] = {}
                     band_files[band_id]['binned'] = fpath
                     band_files[band_id]['bin_factor'] = 4
-                elif (suffix.endswith('2') and len(suffix) > 1) or 'binned' in suffix.lower():
-                    # 2x2 Binned variant: suffix = "02", "12", "x2", "2_binned", etc.
-                    band_id = suffix.replace('_binned', '').replace('binned', '')
-                    if band_id.endswith('2') and len(band_id) > 1:
-                        band_id = band_id[:-1]
+                elif 'binned' in lower_suffix or 'binned2' in lower_suffix or 'binned_2' in lower_suffix or '_2x2' in lower_suffix:
+                    band_id = suffix.replace('_binned2', '').replace('binned2', '').replace('_binned', '').replace('binned', '')
                     if band_id not in band_files:
                         band_files[band_id] = {}
                     band_files[band_id]['binned'] = fpath

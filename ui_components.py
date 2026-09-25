@@ -2642,18 +2642,17 @@ class ParameterDialog(QDialog):
                     base = name.split('.band')[1]
                 base = re.sub(r'^_?band', '', base, flags=re.IGNORECASE)
                 base = re.sub(r'_(?:left|right|binned\d*)$', '', base, flags=re.IGNORECASE)
-                if base.endswith(('2', '4')) and len(base) > 1:
-                    base = base[:-1]
                 if not base:
                     base = name
                 if base in seen_bases:
                     continue
                 seen_bases.add(base)
 
+                lower_name = name.lower()
                 ratio = max(1.0, max_size / float(sz)) if sz > 0 else 1.0
-                if ratio >= 12.0 or name.lower().endswith('4'):
+                if ratio >= 12.0 or 'binned4' in lower_name or 'binned_4' in lower_name or '_4x4' in lower_name:
                     auto_mode = 4
-                elif ratio >= 2.5 or 'binned' in name.lower() or name.lower().endswith('2'):
+                elif ratio >= 2.5 or 'binned' in lower_name or 'binned2' in lower_name or 'binned_2' in lower_name or '_2x2' in lower_name:
                     auto_mode = 2
                 else:
                     auto_mode = 1
