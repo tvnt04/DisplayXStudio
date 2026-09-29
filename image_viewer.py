@@ -1628,12 +1628,111 @@ class GraphicsImageViewer(QWidget):
         from utils import is_dark_theme
         return is_dark_theme()
 
+    def _apply_magnifier_combo_style(self):
+        dark = self._is_dark_theme()
+        if hasattr(self, 'magnifier_mode_combo') and self.magnifier_mode_combo is not None:
+            self.magnifier_mode_combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+            self.magnifier_mode_combo.setMinimumWidth(80)
+            if dark:
+                self.magnifier_mode_combo.setStyleSheet("""
+                    QComboBox {
+                        background-color: #2c3340;
+                        color: #ffffff;
+                        border: 1px solid rgba(255, 255, 255, 0.2);
+                        border-radius: 4px;
+                        padding: 0px 18px 0px 6px;
+                        font-size: 11px;
+                        min-height: 20px;
+                        max-height: 20px;
+                        min-width: 80px;
+                    }
+                    QComboBox::drop-down { border: none; width: 14px; }
+                    QComboBox::down-arrow {
+                        image: none;
+                        border-left: 3px solid transparent;
+                        border-right: 3px solid transparent;
+                        border-top: 4px solid #cccccc;
+                        margin-right: 4px;
+                    }
+                    QComboBox QAbstractItemView {
+                        background-color: #202632;
+                        color: #ffffff;
+                        selection-background-color: #354154;
+                        selection-color: #ffffff;
+                    }
+                    QToolTip {
+                        background-color: #23272e;
+                        color: #e6e8eb;
+                        border: 1px solid #444c56;
+                        padding: 4px 8px;
+                        border-radius: 4px;
+                        font-size: 11px;
+                    }
+                """)
+            else:
+                self.magnifier_mode_combo.setStyleSheet("""
+                    QComboBox {
+                        background-color: #ffffff;
+                        color: #212121;
+                        border: 1px solid #b0b8c0;
+                        border-radius: 4px;
+                        padding: 0px 18px 0px 6px;
+                        font-size: 11px;
+                        min-height: 20px;
+                        max-height: 20px;
+                        min-width: 80px;
+                    }
+                    QComboBox::drop-down { border: none; width: 14px; }
+                    QComboBox::down-arrow {
+                        image: none;
+                        border-left: 3px solid transparent;
+                        border-right: 3px solid transparent;
+                        border-top: 4px solid #555555;
+                        margin-right: 4px;
+                    }
+                    QComboBox QAbstractItemView {
+                        background-color: #ffffff;
+                        color: #212121;
+                        selection-background-color: #e0f2f1;
+                        selection-color: #00796B;
+                    }
+                    QToolTip {
+                        background-color: #ffffff;
+                        color: #212121;
+                        border: 1px solid #c0c6cc;
+                        padding: 4px 8px;
+                        border-radius: 4px;
+                        font-size: 11px;
+                    }
+                """)
+
     def update_theme(self):
         dark = self._is_dark_theme()
         if hasattr(self, 'position_label') and self.position_label is not None:
             self.position_label.setStyleSheet("color: #FFFFFF;" if dark else "color: #111111;")
         if hasattr(self, 'magnifier_zoom_label') and self.magnifier_zoom_label is not None:
             self.magnifier_zoom_label.setStyleSheet("color: #FFFFFF;" if dark else "color: #111111;")
+        self._apply_magnifier_combo_style()
+        for card in getattr(self, '_pill_cards', []):
+            try:
+                if dark:
+                    card.setStyleSheet("""
+                        QWidget#pill_card {
+                            background-color: rgba(30, 34, 40, 0.65);
+                            border: 1px solid rgba(255, 255, 255, 0.08);
+                            border-radius: 8px;
+                        }
+                    """)
+                else:
+                    card.setStyleSheet("""
+                        QWidget#pill_card {
+                            background-color: rgba(255, 255, 255, 0.9);
+                            border: 1px solid rgba(0, 0, 0, 0.12);
+                            border-radius: 8px;
+                        }
+                    """)
+            except Exception:
+                pass
         if hasattr(self, '_apply_interaction_mode_func') and callable(self._apply_interaction_mode_func):
             mode = getattr(self, '_current_interaction_mode', 'off')
             self._apply_interaction_mode_func(mode)
@@ -1643,6 +1742,27 @@ class GraphicsImageViewer(QWidget):
     @staticmethod
     def _btn_style(bg_color: str, text_color: str = "white", hover_factor: float = 1.12) -> str:
         """Return a complete QPushButton QSS for a pill-shaped status button."""
+        from utils import is_dark_theme
+        dark = is_dark_theme()
+        tip_css = """
+            QToolTip {
+                background-color: #23272e;
+                color: #e6e8eb;
+                border: 1px solid #444c56;
+                padding: 4px 8px;
+                border-radius: 4px;
+                font-size: 11px;
+            }
+        """ if dark else """
+            QToolTip {
+                background-color: #ffffff;
+                color: #212121;
+                border: 1px solid #c0c6cc;
+                padding: 4px 8px;
+                border-radius: 4px;
+                font-size: 11px;
+            }
+        """
         return (
             f"QPushButton {{"
             f"  background-color: {bg_color};"
@@ -1664,11 +1784,33 @@ class GraphicsImageViewer(QWidget):
             f"  background-color: {bg_color};"
             f"  border: 1px solid rgba(255,255,255,0.45);"
             f"}}"
+            f"{tip_css}"
         )
 
     @staticmethod
     def _tool_btn_style(bg_color: str, text_color: str = "white") -> str:
         """Return a complete QToolButton QSS for a pill-shaped status button."""
+        from utils import is_dark_theme
+        dark = is_dark_theme()
+        tip_css = """
+            QToolTip {
+                background-color: #23272e;
+                color: #e6e8eb;
+                border: 1px solid #444c56;
+                padding: 4px 8px;
+                border-radius: 4px;
+                font-size: 11px;
+            }
+        """ if dark else """
+            QToolTip {
+                background-color: #ffffff;
+                color: #212121;
+                border: 1px solid #c0c6cc;
+                padding: 4px 8px;
+                border-radius: 4px;
+                font-size: 11px;
+            }
+        """
         return (
             f"QToolButton {{"
             f"  background-color: {bg_color};"
@@ -1689,12 +1831,16 @@ class GraphicsImageViewer(QWidget):
             f"  background-color: {bg_color};"
             f"  border: 1px solid rgba(255,255,255,0.45);"
             f"}}"
+            f"{tip_css}"
         )
 
 
     def _create_pill_capsule(self, layout):
         card = QWidget()
         card.setObjectName("pill_card")
+        if not hasattr(self, '_pill_cards'):
+            self._pill_cards = []
+        self._pill_cards.append(card)
         dark = self._is_dark_theme()
         if dark:
             card.setStyleSheet("""
@@ -1926,7 +2072,8 @@ class GraphicsImageViewer(QWidget):
         self.magnifier_mode_combo.addItems(["Off", "Contrast", "Torch"])
         self.magnifier_mode_combo.setToolTip("Magnifier mode: Off, Contrast, or Torch")
         self.magnifier_mode_combo.setFixedHeight(20)
-        self.magnifier_mode_combo.setStyleSheet("QComboBox { font-size: 11px; padding: 0px 4px; min-height: 20px; max-height: 20px; }")
+        self.magnifier_mode_combo.setMinimumWidth(85)
+        self._apply_magnifier_combo_style()
         self.magnifier_mode_combo.hide()
 
         # Retain torch_toggle for backwards compatibility

@@ -79,6 +79,7 @@ def _qt_message_handler(mode, context, message):
 # --- Light/Dark palette helpers  ---
 def set_light_palette(app: QApplication):
     try:
+        app.setStyle('Fusion')
         p = QPalette()
         p.setColor(QPalette.Window, QColor(245, 245, 247))  # Soft off-white background
         p.setColor(QPalette.WindowText, QColor(33, 33, 33))  # Dark gray text
@@ -92,10 +93,113 @@ def set_light_palette(app: QApplication):
         p.setColor(QPalette.ToolTipBase, QColor(255, 255, 255))
         p.setColor(QPalette.ToolTipText, QColor(33, 33, 33))
         app.setPalette(p)
+        QToolTip.setPalette(p)
 
         # Medium pale teal buttons
         stylesheet = """
             * { font-family: 'Segoe UI', Arial, sans-serif; font-size:11px; }
+            QToolTip {
+                background-color: #ffffff;
+                color: #212121;
+                border: 1px solid #c0c6cc;
+                padding: 4px 8px;
+                border-radius: 4px;
+                font-size: 11px;
+            }
+            QScrollBar:horizontal {
+                height: 10px;
+                background: #e4e7eb;
+                margin: 0px;
+                border-radius: 5px;
+            }
+            QScrollBar::handle:horizontal {
+                background: #a6b0bc;
+                min-width: 25px;
+                border-radius: 5px;
+            }
+            QScrollBar::handle:horizontal:hover {
+                background: #7c8897;
+            }
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+                width: 0px;
+                background: none;
+            }
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
+                background: none;
+            }
+            QScrollBar:vertical {
+                width: 10px;
+                background: #e4e7eb;
+                margin: 0px;
+                border-radius: 5px;
+            }
+            QScrollBar::handle:vertical {
+                background: #a6b0bc;
+                min-height: 25px;
+                border-radius: 5px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #7c8897;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+                background: none;
+            }
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+                background: none;
+            }
+            QComboBox {
+                background-color: #ffffff;
+                color: #212121;
+                border: 1px solid #c0c6cc;
+                border-radius: 4px;
+                padding: 1px 6px;
+                font-size: 11px;
+                min-height: 20px;
+            }
+            QComboBox:hover {
+                border: 1px solid #26A69A;
+            }
+            QComboBox::drop-down {
+                border: none;
+                width: 14px;
+            }
+            QComboBox::down-arrow {
+                image: none;
+                border-left: 3px solid transparent;
+                border-right: 3px solid transparent;
+                border-top: 4px solid #555555;
+                margin-right: 4px;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #ffffff;
+                color: #212121;
+                selection-background-color: #e0f2f1;
+                selection-color: #00796B;
+                border: 1px solid #c0c6cc;
+                border-radius: 4px;
+                padding: 2px;
+            }
+            QMenu {
+                background-color: #ffffff;
+                color: #212121;
+                border: 1px solid #d0d7de;
+                border-radius: 6px;
+                padding: 4px;
+            }
+            QMenu::item {
+                padding: 4px 20px 4px 10px;
+                border-radius: 4px;
+            }
+            QMenu::item:selected {
+                background-color: #e0f2f1;
+                color: #00796B;
+            }
+            QMenu::separator {
+                height: 1px;
+                background-color: #e1e4e8;
+                margin: 4px 8px;
+            }
             QGraphicsView {
                 background-color: transparent;
                 border: none;
@@ -194,9 +298,112 @@ def set_dark_palette(app: QApplication):
         dark_palette.setColor(QPalette.Highlight, QColor(42, 130, 218))
         dark_palette.setColor(QPalette.HighlightedText, Qt.black)
         app.setPalette(dark_palette)
+        QToolTip.setPalette(dark_palette)
 
         dark_stylesheet = """
         * { font-family: 'Segoe UI', Arial, sans-serif; font-size:11px; }
+        QToolTip {
+            background-color: #23272e;
+            color: #e6e8eb;
+            border: 1px solid #444c56;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+        }
+        QScrollBar:horizontal {
+            height: 10px;
+            background: rgba(20, 24, 30, 0.6);
+            margin: 0px;
+            border-radius: 5px;
+        }
+        QScrollBar::handle:horizontal {
+            background: rgba(255, 255, 255, 0.25);
+            min-width: 25px;
+            border-radius: 5px;
+        }
+        QScrollBar::handle:horizontal:hover {
+            background: rgba(255, 255, 255, 0.4);
+        }
+        QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+            width: 0px;
+            background: none;
+        }
+        QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
+            background: none;
+        }
+        QScrollBar:vertical {
+            width: 10px;
+            background: rgba(20, 24, 30, 0.6);
+            margin: 0px;
+            border-radius: 5px;
+        }
+        QScrollBar::handle:vertical {
+            background: rgba(255, 255, 255, 0.25);
+            min-height: 25px;
+            border-radius: 5px;
+        }
+        QScrollBar::handle:vertical:hover {
+            background: rgba(255, 255, 255, 0.4);
+        }
+        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+            height: 0px;
+            background: none;
+        }
+        QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+            background: none;
+        }
+        QComboBox {
+            background-color: #2c3340;
+            color: #ffffff;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 4px;
+            padding: 1px 6px;
+            font-size: 11px;
+            min-height: 20px;
+        }
+        QComboBox:hover {
+            border: 1px solid rgba(255, 255, 255, 0.35);
+        }
+        QComboBox::drop-down {
+            border: none;
+            width: 14px;
+        }
+        QComboBox::down-arrow {
+            image: none;
+            border-left: 3px solid transparent;
+            border-right: 3px solid transparent;
+            border-top: 4px solid #cccccc;
+            margin-right: 4px;
+        }
+        QComboBox QAbstractItemView {
+            background-color: #202632;
+            color: #ffffff;
+            selection-background-color: #354154;
+            selection-color: #ffffff;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 4px;
+            padding: 2px;
+        }
+        QMenu {
+            background-color: #24292e;
+            color: #f0f6fc;
+            border: 1px solid #444d56;
+            border-radius: 6px;
+            padding: 4px;
+        }
+        QMenu::item {
+            padding: 4px 20px 4px 10px;
+            border-radius: 4px;
+        }
+        QMenu::item:selected {
+            background-color: #0366d6;
+            color: #ffffff;
+        }
+        QMenu::separator {
+            height: 1px;
+            background-color: #444d56;
+            margin: 4px 8px;
+        }
         QGraphicsView {
             background-color: transparent;
             border: none;
@@ -382,7 +589,7 @@ class _TooltipFilter(QObject):
                     pos = event.globalPos()
                 else:
                     pos = QCursor.pos()
-                QToolTip.showText(pos, tip, watched)
+                QToolTip.showText(pos, tip)
                 return True
         return False
 
@@ -1114,6 +1321,11 @@ class MainApp(QMainWindow):
 
         from PyQt5.QtWidgets import QWidget
         for viewer in self.findChildren(QWidget):
+            if hasattr(viewer, 'update_theme') and callable(viewer.update_theme):
+                try:
+                    viewer.update_theme()
+                except Exception:
+                    pass
             if viewer.__class__.__name__ == 'GraphicsImageViewer' and hasattr(viewer, '_set_bg_color'):
                 viewer._set_bg_color(color, propagate=False)
 
