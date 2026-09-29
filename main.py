@@ -81,17 +81,18 @@ def set_light_palette(app: QApplication):
     try:
         app.setStyle('Fusion')
         p = QPalette()
-        p.setColor(QPalette.Window, QColor(245, 245, 247))  # Soft off-white background
-        p.setColor(QPalette.WindowText, QColor(33, 33, 33))  # Dark gray text
-        p.setColor(QPalette.Base, QColor(255, 255, 255))  # Pure white for inputs
-        p.setColor(QPalette.AlternateBase, QColor(240, 240, 242))  # Subtle alternate rows
-        p.setColor(QPalette.Text, QColor(33, 33, 33))
-        p.setColor(QPalette.Button, QColor(255, 255, 255))
-        p.setColor(QPalette.ButtonText, QColor(33, 33, 33))  # white text on teal buttons
-        p.setColor(QPalette.Highlight, QColor(38, 166, 154))    # teal 400
-        p.setColor(QPalette.HighlightedText, QColor(255, 255, 255))
-        p.setColor(QPalette.ToolTipBase, QColor(255, 255, 255))
-        p.setColor(QPalette.ToolTipText, QColor(33, 33, 33))
+        for group in (QPalette.Active, QPalette.Inactive, QPalette.Disabled):
+            p.setColor(group, QPalette.Window, QColor(245, 245, 247))
+            p.setColor(group, QPalette.WindowText, QColor(33, 33, 33))
+            p.setColor(group, QPalette.Base, QColor(255, 255, 255))
+            p.setColor(group, QPalette.AlternateBase, QColor(240, 240, 242))
+            p.setColor(group, QPalette.Text, QColor(33, 33, 33))
+            p.setColor(group, QPalette.Button, QColor(255, 255, 255))
+            p.setColor(group, QPalette.ButtonText, QColor(33, 33, 33))
+            p.setColor(group, QPalette.Highlight, QColor(38, 166, 154))
+            p.setColor(group, QPalette.HighlightedText, QColor(255, 255, 255))
+            p.setColor(group, QPalette.ToolTipBase, QColor(255, 255, 255))
+            p.setColor(group, QPalette.ToolTipText, QColor(33, 33, 33))
         app.setPalette(p)
         QToolTip.setPalette(p)
 
@@ -284,19 +285,20 @@ def set_dark_palette(app: QApplication):
     try:
         app.setStyle('Fusion')  # Fusion plays nicely with palette tweaks
         dark_palette = QPalette()
-        dark_palette.setColor(QPalette.Window, QColor(53, 53, 53))
-        dark_palette.setColor(QPalette.WindowText, Qt.white)
-        dark_palette.setColor(QPalette.Base, QColor(35, 35, 35))
-        dark_palette.setColor(QPalette.AlternateBase, QColor(53, 53, 53))
-        dark_palette.setColor(QPalette.ToolTipBase, Qt.black)
-        dark_palette.setColor(QPalette.ToolTipText, Qt.white)
-        dark_palette.setColor(QPalette.Text, Qt.white)
-        dark_palette.setColor(QPalette.Button, QColor(44, 44, 44))
-        dark_palette.setColor(QPalette.ButtonText, Qt.white)
-        dark_palette.setColor(QPalette.BrightText, Qt.red)
-        dark_palette.setColor(QPalette.Link, QColor(148, 36, 227))
-        dark_palette.setColor(QPalette.Highlight, QColor(42, 130, 218))
-        dark_palette.setColor(QPalette.HighlightedText, Qt.black)
+        for group in (QPalette.Active, QPalette.Inactive, QPalette.Disabled):
+            dark_palette.setColor(group, QPalette.Window, QColor(53, 53, 53))
+            dark_palette.setColor(group, QPalette.WindowText, Qt.white)
+            dark_palette.setColor(group, QPalette.Base, QColor(35, 35, 35))
+            dark_palette.setColor(group, QPalette.AlternateBase, QColor(53, 53, 53))
+            dark_palette.setColor(group, QPalette.ToolTipBase, QColor(35, 39, 46))
+            dark_palette.setColor(group, QPalette.ToolTipText, QColor(230, 232, 235))
+            dark_palette.setColor(group, QPalette.Text, Qt.white)
+            dark_palette.setColor(group, QPalette.Button, QColor(44, 44, 44))
+            dark_palette.setColor(group, QPalette.ButtonText, Qt.white)
+            dark_palette.setColor(group, QPalette.BrightText, Qt.red)
+            dark_palette.setColor(group, QPalette.Link, QColor(148, 36, 227))
+            dark_palette.setColor(group, QPalette.Highlight, QColor(42, 130, 218))
+            dark_palette.setColor(group, QPalette.HighlightedText, Qt.black)
         app.setPalette(dark_palette)
         QToolTip.setPalette(dark_palette)
 
@@ -585,11 +587,15 @@ class _TooltipFilter(QObject):
             except Exception:
                 tip = ""
             if tip:
+                # Force rich text to bypass native GTK tooltips which ignore palettes
+                from utils import is_dark_theme
+                tip_color = "#e6e8eb" if is_dark_theme() else "#212121"
+                rich_tip = f"<span style='color: {tip_color};'>{tip}</span>"
                 if isinstance(event, QHelpEvent):
                     pos = event.globalPos()
                 else:
                     pos = QCursor.pos()
-                QToolTip.showText(pos, tip)
+                QToolTip.showText(pos, rich_tip)
                 return True
         return False
 
