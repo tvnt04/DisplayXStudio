@@ -96,6 +96,15 @@ def set_light_palette(app: QApplication):
         # Medium pale teal buttons
         stylesheet = """
             * { font-family: 'Segoe UI', Arial, sans-serif; font-size:11px; }
+            QGraphicsView {
+                background-color: transparent;
+                border: none;
+                border-radius: 16px;
+            }
+            QGraphicsView::viewport {
+                background-color: white;
+                border-radius: 16px;
+            }
             QPushButton {
                 background-color: #26A69A;   /* medium pale teal */
                 color: white;
@@ -188,8 +197,14 @@ def set_dark_palette(app: QApplication):
 
         dark_stylesheet = """
         * { font-family: 'Segoe UI', Arial, sans-serif; font-size:11px; }
-         QGraphicsView, QGraphicsView::viewport {
+        QGraphicsView {
+            background-color: transparent;
+            border: none;
+            border-radius: 16px;
+        }
+        QGraphicsView::viewport {
             background-color: black;
+            border-radius: 16px;
         }
         QToolButton[class="tab-close"] {
             background-color: transparent;
@@ -612,9 +627,22 @@ class MainApp(QMainWindow):
         self.secondary_window = None
 
         self.display_menu_button = QToolButton()
-        self.display_menu_button.setText("Display")
+        self.display_menu_button.setText("Monitor")
         self.display_menu_button.setPopupMode(QToolButton.InstantPopup)
-        self.display_menu_button.setToolTip("Display and monitor options")
+        self.display_menu_button.setToolTip("Monitor options")
+        self.display_menu_button.setStyleSheet("""
+            QToolButton {
+                font-weight: 600;
+                background-color: rgba(128, 128, 128, 0.15);
+                border: 1px solid rgba(128, 128, 128, 0.25);
+                border-radius: 8px;
+                padding: 4px 10px;
+            }
+            QToolButton:hover {
+                background-color: rgba(128, 128, 128, 0.28);
+                border: 1px solid rgba(128, 128, 128, 0.45);
+            }
+        """)
         self.display_menu = QMenu(self.display_menu_button)
 
         self.toggle_screen2_window_action = QAction(self)
@@ -628,6 +656,7 @@ class MainApp(QMainWindow):
         self.display_menu.addAction(self.move_tab_screen2_action)
 
         self.display_menu_button.setMenu(self.display_menu)
+        self._top_right_controls.addWidget(self.display_menu_button)
         button_layout.addStretch()
 
 
@@ -644,36 +673,49 @@ class MainApp(QMainWindow):
         self.update_button.clicked.connect(self._on_update_clicked)
         self._top_right_controls.addWidget(self.update_button)
 
-        self._top_right_controls.addWidget(self.display_menu_button)
-
-        self.add_new_tab()
-
         app = QApplication.instance()
         app.setStyle('Fusion')  # Set Fusion style initially for consistency
         set_light_palette(app)  # Apply light palette initially
         self._tooltip_filter = _TooltipFilter(self)
         app.installEventFilter(self._tooltip_filter)
 
-        self._is_dark_mode = False
+        self._is_dark_mode = True
 
         self.dark_mode_button = QToolButton()
         self.dark_mode_button.setCheckable(True)
         self.dark_mode_button.setToolTip("Switch light/dark theme")
-        self.dark_mode_button.setText("🌞")  # default: light mode
+        self.dark_mode_button.setText("☀️")  # default: light mode
+        self.dark_mode_button.setFixedSize(36, 36)
         self.dark_mode_button.setStyleSheet("""
-            font-size: 16pt;
-            font-family: "Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji", "EmojiOne Color", sans-serif;
-        """)  # Updated for color emojis
+            QToolButton {
+                font-size: 14pt;
+                font-family: "Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji", "EmojiOne Color", sans-serif;
+                background-color: rgba(128, 128, 128, 0.15);
+                border: 1px solid rgba(128, 128, 128, 0.25);
+                border-radius: 18px;
+                padding: 0px;
+            }
+            QToolButton:hover {
+                background-color: rgba(128, 128, 128, 0.28);
+                border: 1px solid rgba(128, 128, 128, 0.45);
+            }
+            QToolButton:pressed {
+                background-color: rgba(128, 128, 128, 0.40);
+            }
+        """)  # Smooth rounded pill button
         self.dark_mode_button.toggled.connect(self._on_dark_mode_toggled)
         self._top_right_controls.addWidget(self.dark_mode_button)
         button_layout.addLayout(self._top_right_controls)
+
+        self.load_dark_mode()  # Load dark mode preference BEFORE creating tabs
+
+        self.add_new_tab()
 
         # Keep a reference and use application-level context so the shortcut
         # works even when focus is inside child widgets.
         self.restore_shortcut = QShortcut(QKeySequence("Ctrl+Shift+P"), self)
         self.restore_shortcut.setContext(Qt.ApplicationShortcut)
         self.restore_shortcut.activated.connect(self.restore_session)
-        self.load_dark_mode()  # Moved here to ensure dark_mode_button exists
         self._refresh_display_menu()
         QTimer.singleShot(0, self._fit_window_to_screen)
         QTimer.singleShot(0, self._update_tab_navigation_controls)
@@ -1034,8 +1076,8 @@ class MainApp(QMainWindow):
         # Save to session
         try:
             data = self._read_json_file(self.session_file, default={}) or {}
-            data['bg_color_dark'] = getattr(self, 'bg_color_dark', '#13191C')
-            data['bg_color_light'] = getattr(self, 'bg_color_light', '#E0E0E0')
+            data['bg_color_dark'] = getattr(self, 'bg_color_dark', '#000000')
+            data['bg_color_light'] = getattr(self, 'bg_color_light', '#FFFFFF')
             self._write_json_atomic(self.session_file, data)
         except Exception:
             pass
@@ -1045,13 +1087,13 @@ class MainApp(QMainWindow):
         if not hasattr(self, 'bg_color_dark'):
             try:
                 data = self._read_json_file(self.session_file, default={}) or {}
-                self.bg_color_dark = data.get('bg_color_dark', '#13191C')
-                self.bg_color_light = data.get('bg_color_light', '#E0E0E0')
+                self.bg_color_dark = data.get('bg_color_dark', '#000000')
+                self.bg_color_light = data.get('bg_color_light', '#FFFFFF')
                 if not hasattr(self, '_is_dark_mode'):
                     self._is_dark_mode = data.get('dark_mode', True)
             except Exception:
-                self.bg_color_dark = '#13191C'
-                self.bg_color_light = '#E0E0E0'
+                self.bg_color_dark = '#000000'
+                self.bg_color_light = '#FFFFFF'
 
         from PyQt5.QtGui import QColor
         if getattr(self, '_is_dark_mode', True):
@@ -1094,7 +1136,7 @@ class MainApp(QMainWindow):
             self._is_dark_mode = True
         else:
             # turn on light mode
-            self.dark_mode_button.setText("🌞")
+            self.dark_mode_button.setText("☀️")
             if hasattr(self, 'update_button'):
                 self.update_button.setStyleSheet("""
                     QToolButton {
@@ -1117,6 +1159,12 @@ class MainApp(QMainWindow):
         if hasattr(self, 'apply_global_bg_to_viewers'):
             self.apply_global_bg_to_viewers()
 
+        try:
+            from utils import update_all_capsule_styles
+            update_all_capsule_styles()
+        except Exception:
+            pass
+
         self.refresh_help_tabs()
 
     def refresh_help_tabs(self):
@@ -1135,12 +1183,14 @@ class MainApp(QMainWindow):
         try:
             data = self._read_json_file(self.session_file, default={}) or {}
             checked = bool(data.get('dark_mode', False))
+            self.bg_color_dark = data.get('bg_color_dark', '#000000')
+            self.bg_color_light = data.get('bg_color_light', '#FFFFFF')
 
             if hasattr(self, 'dark_mode_button') and self.dark_mode_button is not None:
                 self.dark_mode_button.blockSignals(True)
                 self.dark_mode_button.setChecked(checked)
                 self.dark_mode_button.blockSignals(False)
-                self.dark_mode_button.setText("🌙" if checked else "🌞")
+                self.dark_mode_button.setText("🌙" if checked else "☀️")
 
             app = QApplication.instance()
             if checked:
@@ -1378,8 +1428,8 @@ class MainApp(QMainWindow):
         old_data = self._read_json_file(self.session_file, default={}) or {}
         data = {
             'dark_mode': self._is_dark_mode,
-            'bg_color_dark': getattr(self, 'bg_color_dark', old_data.get('bg_color_dark', '#13191C')),
-            'bg_color_light': getattr(self, 'bg_color_light', old_data.get('bg_color_light', '#E0E0E0')),
+            'bg_color_dark': getattr(self, 'bg_color_dark', old_data.get('bg_color_dark', '#000000')),
+            'bg_color_light': getattr(self, 'bg_color_light', old_data.get('bg_color_light', '#FFFFFF')),
             'modes': {
                 'band': [],
                 'raw': [],

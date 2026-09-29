@@ -12,7 +12,10 @@ import hashlib
 import math
 import gc
 import shlex
-import psutil
+try:
+    import psutil
+except ImportError:
+    psutil = None
 from app_paths import get_app_data_path, migrate_legacy_file
 import re
 import time
@@ -31,7 +34,85 @@ try:
         os.environ.pop("QT_PLUGIN_PATH", None)
 except ImportError:
     cv2 = None
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+def is_dark_theme():
+    try:
+        from PyQt5.QtWidgets import QApplication
+        app = QApplication.instance()
+        if app:
+            for widget in app.topLevelWidgets():
+                if hasattr(widget, '_is_dark_mode'):
+                    return widget._is_dark_mode
+    except Exception:
+        pass
+    try:
+        import json, os
+        from app_paths import get_app_data_path
+        session_file = get_app_data_path("last_session.json")
+        if os.path.exists(session_file):
+            with open(session_file, 'r') as sf:
+                data = json.load(sf)
+            if 'dark_mode' in data:
+                return bool(data['dark_mode'])
+    except Exception:
+        pass
+    try:
+        from PyQt5.QtWidgets import QApplication
+        from PyQt5.QtGui import QPalette
+        app = QApplication.instance()
+        if app:
+            bg = app.palette().color(QPalette.Window)
+            if bg and bg.isValid():
+                return bg.lightness() < 128
+    except Exception:
+        pass
+    return True
+
+def update_all_capsule_styles():
+    try:
+        from PyQt5.QtWidgets import QApplication
+        app = QApplication.instance()
+        if not app:
+            return
+        dark = is_dark_theme()
+        card_qss = """
+            QWidget#capsule_card {
+                background-color: rgba(30, 34, 40, 0.65);
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                border-radius: 10px;
+            }
+        """ if dark else """
+            QWidget#capsule_card {
+                background-color: rgba(255, 255, 255, 0.9);
+                border: 1px solid rgba(0, 0, 0, 0.12);
+                border-radius: 10px;
+            }
+        """
+        pill_qss = """
+            QWidget#pill_card {
+                background-color: rgba(30, 34, 40, 0.65);
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                border-radius: 8px;
+            }
+        """ if dark else """
+            QWidget#pill_card {
+                background-color: rgba(255, 255, 255, 0.9);
+                border: 1px solid rgba(0, 0, 0, 0.12);
+                border-radius: 8px;
+            }
+        """
+        for widget in app.allWidgets():
+            try:
+                name = widget.objectName()
+                if name == "capsule_card":
+                    widget.setStyleSheet(card_qss)
+                elif name == "pill_card":
+                    widget.setStyleSheet(pill_qss)
+                if hasattr(widget, 'update_theme') and callable(widget.update_theme):
+                    widget.update_theme()
+            except Exception:
+                pass
+    except Exception as e:
+        print(f"Error updating capsule styles: {e}")
 
 def _process_frame_array_to_hist(frame_like, ignore_extremes):
     # Special handling for LazyFrames - get raw bitdepth data
@@ -272,6 +353,8 @@ def image_coords_to_latlon(x_img, y_img, geo_info, bands_info=None, gap=0, orig_
     return float(lat), float(lon), int(band_index)
 
 def check_memory_requirement(expected_bytes, parent=None):
+    if psutil is None:
+        return True
     avail = psutil.virtual_memory().available
     if avail < expected_bytes:
         msg = QMessageBox(parent)

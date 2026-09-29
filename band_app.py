@@ -4,10 +4,13 @@ from PyQt5.QtWidgets import (
     QFormLayout, QButtonGroup, QTabWidget, QToolButton, QScrollArea, QTextEdit, QDialog, QTabBar, QProgressDialog, QApplication, QMenu, QShortcut, QProgressBar, QSplitter
 )
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QPropertyAnimation, QThread
-from PyQt5.QtGui import QKeySequence, QTransform
+from PyQt5.QtGui import QKeySequence, QTransform, QPalette
 import json
 import hashlib
-import psutil
+try:
+    import psutil
+except ImportError:
+    psutil = None
 import time
 import gc
 import platform
@@ -510,6 +513,8 @@ class MemoryMonitor(QThread):
     def run(self):
         while self.running:
             time.sleep(1.0) # Check every second
+            if psutil is None:
+                continue
             usage = psutil.virtual_memory().percent
             # Trigger memory pressure handling when usage crosses 90%
             if usage >= 90.0:
@@ -958,37 +963,76 @@ class BandStitchProApp(BandViewsMixin, QWidget):
         self.band_offsets = data.get('band_offsets', {f"b{i}": {"x": 0, "y": 0} for i in range(7)})
         self.rgb_bands = data.get('rgb_bands', {"R": "b0", "G": "b1", "B": "b2"})
         # Safe RGB band UI updates (after load_folder_data populates avail_keys)
-        if hasattr(self, 'red_band_var') and self.red_band_var.count() > 0:
-            self.red_band_var.setCurrentText(self.rgb_bands["R"])
-        if hasattr(self, 'green_band_var') and self.green_band_var.count() > 0:
-            self.green_band_var.setCurrentText(self.rgb_bands["G"])
-        if hasattr(self, 'blue_band_var') and self.blue_band_var.count() > 0:
-            self.blue_band_var.setCurrentText(self.rgb_bands["B"])
-        if hasattr(self, 'gap_var'):
-            self.gap_var.setValue(data.get('gap', 0))
-        if hasattr(self, 'contrast_enhance_var'):
-            self.contrast_enhance_var.setChecked(data.get('contrast_enhance', False))
-        if hasattr(self, 'contrast_min_var'):
-            self.contrast_min_var.setValue(data.get('contrast_min', 0))
-        if hasattr(self, 'contrast_max_var'):
-            self.contrast_max_var.setValue(data.get('contrast_max', self._current_max_dn()))
-        self._normalize_legacy_contrast_limits()
+        try:
+            if hasattr(self, 'red_band_var') and self.red_band_var and self.red_band_var.count() > 0:
+                self.red_band_var.setCurrentText(self.rgb_bands["R"])
+        except Exception:
+            pass
+        try:
+            if hasattr(self, 'green_band_var') and self.green_band_var and self.green_band_var.count() > 0:
+                self.green_band_var.setCurrentText(self.rgb_bands["G"])
+        except Exception:
+            pass
+        try:
+            if hasattr(self, 'blue_band_var') and self.blue_band_var and self.blue_band_var.count() > 0:
+                self.blue_band_var.setCurrentText(self.rgb_bands["B"])
+        except Exception:
+            pass
+        try:
+            if hasattr(self, 'gap_var') and self.gap_var:
+                self.gap_var.setValue(data.get('gap', 0))
+        except Exception:
+            pass
+        try:
+            if hasattr(self, 'contrast_enhance_var') and self.contrast_enhance_var:
+                self.contrast_enhance_var.setChecked(data.get('contrast_enhance', False))
+        except Exception:
+            pass
+        try:
+            if hasattr(self, 'contrast_min_var') and self.contrast_min_var:
+                self.contrast_min_var.setValue(data.get('contrast_min', 0))
+        except Exception:
+            pass
+        try:
+            if hasattr(self, 'contrast_max_var') and self.contrast_max_var:
+                self.contrast_max_var.setValue(data.get('contrast_max', self._current_max_dn()))
+        except Exception:
+            pass
+        try:
+            self._normalize_legacy_contrast_limits()
+        except Exception:
+            pass
         # Safe frame mode updates
-        frame_mode_id = data.get('frame_mode', 0)
-        if hasattr(self, 'frame_mode_var') and self.frame_mode_var.button(frame_mode_id):
-            self.frame_mode_var.button(frame_mode_id).setChecked(True)
-        rgb_frame_mode_id = data.get('rgb_frame_mode', 0)
-        if hasattr(self, 'rgb_frame_mode_var') and self.rgb_frame_mode_var.button(rgb_frame_mode_id):
-            self.rgb_frame_mode_var.button(rgb_frame_mode_id).setChecked(True)
-        fit_mode_id = data.get('fit_mode', 1)
-        if hasattr(self, 'fit_mode_var') and self.fit_mode_var.button(fit_mode_id):
-            self.fit_mode_var.button(fit_mode_id).setChecked(True)
-        if hasattr(self, 'start_frame_entry'):
-            self.start_frame_entry.setValue(data.get('start_frame', 1))
-        if hasattr(self, 'end_frame_entry'):
-            self.end_frame_entry.setValue(data.get('end_frame', 1))
+        try:
+            frame_mode_id = data.get('frame_mode', 0)
+            if hasattr(self, 'frame_mode_var') and self.frame_mode_var and self.frame_mode_var.button(frame_mode_id):
+                self.frame_mode_var.button(frame_mode_id).setChecked(True)
+        except Exception:
+            pass
+        try:
+            rgb_frame_mode_id = data.get('rgb_frame_mode', 0)
+            if hasattr(self, 'rgb_frame_mode_var') and self.rgb_frame_mode_var and self.rgb_frame_mode_var.button(rgb_frame_mode_id):
+                self.rgb_frame_mode_var.button(rgb_frame_mode_id).setChecked(True)
+        except Exception:
+            pass
+        try:
+            fit_mode_id = data.get('fit_mode', 1)
+            if hasattr(self, 'fit_mode_var') and self.fit_mode_var and self.fit_mode_var.button(fit_mode_id):
+                self.fit_mode_var.button(fit_mode_id).setChecked(True)
+        except Exception:
+            pass
+        try:
+            if hasattr(self, 'start_frame_entry') and self.start_frame_entry:
+                self.start_frame_entry.setValue(data.get('start_frame', 1))
+        except Exception:
+            pass
+        try:
+            if hasattr(self, 'end_frame_entry') and self.end_frame_entry:
+                self.end_frame_entry.setValue(data.get('end_frame', 1))
+        except Exception:
+            pass
         # matrix size (pixel info matrix)
-        if hasattr(self, 'matrix_size_var') and 'matrix_size' in data:
+        if hasattr(self, 'matrix_size_var') and self.matrix_size_var and 'matrix_size' in data:
             try:
                 self.matrix_size_var.setValue(int(data.get('matrix_size', self.matrix_size_var.value())))
             except Exception:
@@ -1172,26 +1216,65 @@ class BandStitchProApp(BandViewsMixin, QWidget):
         except Exception:
             return int(max(1, round(float(default if default is not None else 384) / float(bin_factor))))
     def _compute_param_hash(self):
-        # Serialize checkbox states instead of objects
-        enabled_states = {k: v.isChecked() for k, v in self.band_enabled.items()}
-        offset_states = {k: {'x': v['x'], 'y': v['y']} for k, v in self.band_offsets.items()}
+        try:
+            enabled_states = {k: v.isChecked() for k, v in getattr(self, 'band_enabled', {}).items() if self._qt_alive(v)}
+            offset_states = {k: {'x': v['x'], 'y': v['y']} for k, v in getattr(self, 'band_offsets', {}).items()}
 
-        param_str = (
-            f"{json.dumps(enabled_states)}" \
-            f"{json.dumps(offset_states)}" \
-            f"{self.gap_var.value()}" \
-            f"{self.contrast_enhance_var.isChecked()}" \
-            f"{getattr(self, 'ENABLE_1_TO_4_LAYOUT', False)}" \
-            f"{self.start_frame_entry.value()}" \
-            f"{self.end_frame_entry.value()}" \
-            f"{self.frame_mode_var.checkedId()}" \
-            f"{self.rgb_frame_mode_var.checkedId()}" \
-            f"{self.rgb_bands}" \
-            f"{self.fit_mode_var.checkedId()}"
-        )
-        # Note: Excluding current_frame_index from hash prevents rebuilding ALL sub-tabs
-        # every time the frame changes. Sub-tabs handle their own frame updates via lazy loading.
-        return hashlib.sha256(param_str.encode()).hexdigest()
+            gap_val = self.gap_var.value() if self._qt_alive(getattr(self, 'gap_var', None)) else 0
+            contrast_val = self.contrast_enhance_var.isChecked() if self._qt_alive(getattr(self, 'contrast_enhance_var', None)) else False
+            layout_val = getattr(self, 'ENABLE_1_TO_4_LAYOUT', False)
+            start_f = self.start_frame_entry.value() if self._qt_alive(getattr(self, 'start_frame_entry', None)) else 1
+            end_f = self.end_frame_entry.value() if self._qt_alive(getattr(self, 'end_frame_entry', None)) else 1
+            frame_m = self.frame_mode_var.checkedId() if self._qt_alive(getattr(self, 'frame_mode_var', None)) else 0
+            rgb_frame_m = self.rgb_frame_mode_var.checkedId() if self._qt_alive(getattr(self, 'rgb_frame_mode_var', None)) else 0
+            rgb_b = str(getattr(self, 'rgb_bands', {}))
+            fit_m = self.fit_mode_var.checkedId() if self._qt_alive(getattr(self, 'fit_mode_var', None)) else 1
+
+            param_str = (
+                f"{json.dumps(enabled_states)}" \
+                f"{json.dumps(offset_states)}" \
+                f"{gap_val}" \
+                f"{contrast_val}" \
+                f"{layout_val}" \
+                f"{start_f}" \
+                f"{end_f}" \
+                f"{frame_m}" \
+                f"{rgb_frame_m}" \
+                f"{rgb_b}" \
+                f"{fit_m}"
+            )
+            return hashlib.sha256(param_str.encode()).hexdigest()
+        except Exception:
+            return ""
+    def _is_dark_theme(self):
+        from utils import is_dark_theme
+        return is_dark_theme()
+
+    def _create_capsule(self, layout):
+        card = QWidget()
+        card.setObjectName("capsule_card")
+        dark = self._is_dark_theme()
+        if dark:
+            card.setStyleSheet("""
+                QWidget#capsule_card {
+                    background-color: rgba(30, 34, 40, 0.65);
+                    border: 1px solid rgba(255, 255, 255, 0.08);
+                    border-radius: 10px;
+                }
+            """)
+        else:
+            card.setStyleSheet("""
+                QWidget#capsule_card {
+                    background-color: rgba(255, 255, 255, 0.9);
+                    border: 1px solid rgba(0, 0, 0, 0.12);
+                    border-radius: 10px;
+                }
+            """)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(6)
+        card.setLayout(layout)
+        return card
+
     def init_ui(self):
         main_layout = QHBoxLayout()
         main_layout.setContentsMargins(5, 5, 5, 5)
@@ -1224,8 +1307,8 @@ class BandStitchProApp(BandViewsMixin, QWidget):
         """)
         self.left_panel = QWidget()
         left_layout = QVBoxLayout()
-        left_layout.setContentsMargins(6, 6, 16, 6)
-        left_layout.setSpacing(4)
+        left_layout.setContentsMargins(8, 8, 16, 8)
+        left_layout.setSpacing(10)
         self.left_panel.setLayout(left_layout)
         self.left_scroll.setWidget(self.left_panel)
         if platform.system() == "Windows":
@@ -1236,11 +1319,26 @@ class BandStitchProApp(BandViewsMixin, QWidget):
             self.left_scroll.setMaximumWidth(580)
         self.left_scroll.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         main_layout.addWidget(self.left_scroll)
-        views_container = QWidget()
+
+        dark = self._is_dark_theme()
+        capsule_qss = """
+            QWidget#capsule_card {
+                background-color: rgba(30, 34, 40, 0.65);
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                border-radius: 10px;
+            }
+        """ if dark else """
+            QWidget#capsule_card {
+                background-color: #FFFFFF;
+                border: 1px solid #D0D5DD;
+                border-radius: 10px;
+            }
+        """
+
+        # Capsule 1: Display Modes Capsule
         views_layout = QVBoxLayout()
-        views_layout.setContentsMargins(0, 0, 0, 0)
+        views_layout.setContentsMargins(10, 10, 10, 10)
         views_layout.setSpacing(4)
-        views_container.setLayout(views_layout)
         self.views_toggle = QToolButton()
         self.views_toggle.setText("Display Modes")
         self.views_toggle.setToolTip("Show/hide display modes")
@@ -1279,25 +1377,15 @@ class BandStitchProApp(BandViewsMixin, QWidget):
             self.views_content_layout.addWidget(cb)
             self.view_checkboxes[name] = cb
         self.views_content_layout.addStretch()
-        # Try to insert above Frame Control if that container exists; otherwise append to left_layout
-        inserted = False
-        try:
-            if hasattr(self, 'frame_control_container'):
-                # search left_layout for the frame_control_container index and insert before it
-                for i in range(left_layout.count()):
-                    w = left_layout.itemAt(i).widget()
-                    if w is self.frame_control_container:
-                        left_layout.insertWidget(i, views_container)
-                        inserted = True
-                        break
-        except Exception:
-            inserted = False
-        if not inserted:
-            left_layout.addWidget(views_container)
 
+        views_container = self._create_capsule(views_layout)
+        left_layout.addWidget(views_container)
+
+        # Capsule 2: Folder Selection Capsule
+        folder_capsule_layout = QVBoxLayout()
         self.folder_label = QLabel("No folder selected")
         self.folder_label.setWordWrap(True)
-        left_layout.addWidget(self.folder_label)
+        folder_capsule_layout.addWidget(self.folder_label)
 
         hb = QHBoxLayout()
         select_btn = QPushButton("Select Folder & Stitch")
@@ -1310,14 +1398,13 @@ class BandStitchProApp(BandViewsMixin, QWidget):
         self.load_menu_btn.setToolTip("Open recent band folders")
         self.load_menu_btn.clicked.connect(self._show_recent_menu)
         hb.addWidget(self.load_menu_btn)
-        left_layout.addLayout(hb)
+        folder_capsule_layout.addLayout(hb)
 
-        frame_group = QGroupBox("Frame Controls")
+        folder_capsule = self._create_capsule(folder_capsule_layout)
+        left_layout.addWidget(folder_capsule)
+
+        # Capsule 3: Frame Playback Capsule (No title / Title-less capsule card)
         frame_layout = QVBoxLayout()
-        frame_layout.setContentsMargins(8, 20, 8, 8) # (left, top, right, bottom)
-        frame_group.setLayout(frame_layout)
-        left_layout.addWidget(frame_group)
-
         self.frame_slider = QSlider(Qt.Horizontal)
         self.frame_slider.setRange(0, 0)
         frame_layout.addWidget(self.frame_slider)
@@ -1359,42 +1446,47 @@ class BandStitchProApp(BandViewsMixin, QWidget):
 
         frame_layout.addLayout(playback_layout)
 
+        self.frame_control_container = self._create_capsule(frame_layout)
+        left_layout.addWidget(self.frame_control_container)
 
-
-        # ---- Collapsible "Band Offsets" section (triangle dropdown) ----
-        offset_container = QWidget()
+        # Capsule 4: Band Offsets Capsule (includes Band Gap)
         offset_container_layout = QVBoxLayout()
-        offset_container_layout.setContentsMargins(0, 0, 0, 0)
+        offset_container_layout.setContentsMargins(10, 10, 10, 10)
         offset_container_layout.setSpacing(4)
-        offset_container.setLayout(offset_container_layout)
-        left_layout.addWidget(offset_container)
         self.offset_toggle = QToolButton()
         self.offset_toggle.setText("Band Offsets")
         self.offset_toggle.setToolTip("Show/hide band offsets")
         self.offset_toggle.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        self.offset_toggle.setArrowType(Qt.RightArrow) # Down when expanded
+        self.offset_toggle.setArrowType(Qt.RightArrow)
         self.offset_toggle.setCheckable(True)
         self.offset_toggle.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.offset_toggle.setMinimumHeight(24) # tweak as needed
-        self.offset_toggle.setStyleSheet(
-            "QToolButton { text-align: left; padding-left: 8px; font-weight: 600; }"
-        )
+        self.offset_toggle.setMinimumHeight(24)
+        self.offset_toggle.setStyleSheet("QToolButton { text-align: left; padding-left: 8px; font-weight: 600; }")
         offset_container_layout.addWidget(self.offset_toggle)
-        # Content area that will be shown/hide
+        offset_container = self._create_capsule(offset_container_layout)
+        left_layout.addWidget(offset_container)
+
+        # Content area that will be shown/hidden
         self.offset_content = QWidget()
         self.offset_content_layout = QVBoxLayout()
         self.offset_content_layout.setContentsMargins(8, 4, 4, 4)
         self.offset_content_layout.setSpacing(6)
         self.offset_content.setLayout(self.offset_content_layout)
         offset_container_layout.addWidget(self.offset_content)
-        # Wire toggle to show/hide content and switch arrow direction
+
+        # Band Gap control inside Band Offsets content
+        gap_layout = QHBoxLayout()
+        gap_layout.setContentsMargins(0, 0, 0, 4)
+        gap_layout.addWidget(QLabel("Band Gap:"))
+        gap_layout.addWidget(self.gap_var)
+        self.offset_content_layout.addLayout(gap_layout)
+
         def _on_offset_toggled(checked):
             self.offset_content.setVisible(checked)
             self.offset_toggle.setArrowType(Qt.DownArrow if checked else Qt.RightArrow)
         self.offset_toggle.toggled.connect(_on_offset_toggled)
-        # Build the per-band rows inside offset_content_layout (same controls as before)
+
         self.offset_spins = {}
-        # ensure band_offsets exists
         if not hasattr(self, 'band_offsets') or self.band_offsets is None:
             self.band_offsets = {f"b{i}": {"x": 0, "y": 0} for i in range(7)}
         for i in range(7):
@@ -1424,45 +1516,57 @@ class BandStitchProApp(BandViewsMixin, QWidget):
             self.offset_content_layout.addLayout(band_layout)
         self.offset_content.setVisible(self.offset_toggle.isChecked())
 
-        param_layout = QVBoxLayout()
-        left_layout.addLayout(param_layout)
-
-        gap_layout = QHBoxLayout()
-        gap_layout.addWidget(QLabel("Band Gap:"))
-        gap_layout.addWidget(self.gap_var)
-        param_layout.addLayout(gap_layout)
-
-        self.enable_1_to_4_layout_cb = QCheckBox("1:4 Layout")
+        # Capsule 5: Upsample (Separate Capsule) & Fit Mode (Separate Capsule) in same row
+        self.enable_1_to_4_layout_cb = QCheckBox("Upsample")
+        self.enable_1_to_4_layout_cb.setToolTip("Upsample binned imagery (1:4 layout)")
         self.enable_1_to_4_layout_cb.setChecked(False)
         self.enable_1_to_4_layout_cb.stateChanged.connect(self._on_1_to_4_layout_toggled)
-        param_layout.addWidget(self.enable_1_to_4_layout_cb)
 
+        upsample_fit_row = QHBoxLayout()
+        upsample_fit_row.setContentsMargins(0, 0, 0, 0)
+        upsample_fit_row.setSpacing(8)
 
-        fit_layout = QHBoxLayout()
-        fit_layout.addWidget(self.fit_mode_screen)
-        fit_layout.addWidget(self.fit_mode_actual)
-        param_layout.addLayout(fit_layout)
+        upsample_inner_layout = QHBoxLayout()
+        upsample_inner_layout.setContentsMargins(0, 0, 0, 0)
+        upsample_inner_layout.addWidget(self.enable_1_to_4_layout_cb)
+        upsample_capsule = self._create_capsule(upsample_inner_layout)
+        upsample_fit_row.addWidget(upsample_capsule)
 
-        contrast_layout = QVBoxLayout()
-        contrast_top = QHBoxLayout()
-        contrast_top.addWidget(self.contrast_enhance_var)
-        contrast_top.addStretch()
-        contrast_layout.addLayout(contrast_top)
+        fit_inner_layout = QHBoxLayout()
+        fit_inner_layout.setContentsMargins(0, 0, 0, 0)
+        fit_inner_layout.setSpacing(8)
+        fit_inner_layout.addWidget(self.fit_mode_screen)
+        fit_inner_layout.addWidget(self.fit_mode_actual)
+        fit_capsule = self._create_capsule(fit_inner_layout)
+        upsample_fit_row.addWidget(fit_capsule)
 
-        contrast_bottom = QHBoxLayout()
-        contrast_bottom.setSpacing(4)
-        contrast_bottom.addWidget(QLabel("Min:"))
-        contrast_bottom.addWidget(self.contrast_min_var)
-        contrast_bottom.addWidget(QLabel("Max:"))
-        contrast_bottom.addWidget(self.contrast_max_var)
+        upsample_fit_row.addStretch()
+        left_layout.addLayout(upsample_fit_row)
+
+        # Capsule 6: Contrast Enhancement Capsule - ALL IN ONE ROW!
+        self.contrast_enhance_var.setText("Enhance Contrast")
+        self.contrast_enhance_var.setToolTip("Enhance Contrast (Dynamic Range Stretching)")
+        contrast_row = QHBoxLayout()
+        contrast_row.setContentsMargins(0, 0, 0, 0)
+        contrast_row.setSpacing(4)
+        contrast_row.addWidget(self.contrast_enhance_var)
+        contrast_row.addWidget(QLabel("Min:"))
+        contrast_row.addWidget(self.contrast_min_var)
+        contrast_row.addWidget(QLabel("Max:"))
+        contrast_row.addWidget(self.contrast_max_var)
         auto_btn = QPushButton("Auto")
-        auto_btn.setMaximumWidth(60)
+        auto_btn.setMaximumWidth(50)
         auto_btn.setToolTip("Auto contrast")
         auto_btn.clicked.connect(self.set_auto_contrast)
-        contrast_bottom.addWidget(auto_btn)
-        contrast_layout.addLayout(contrast_bottom)
-        param_layout.addLayout(contrast_layout)
-        # Measure checkbox moved to viewer bottom bar (per-view control)
+        contrast_row.addWidget(auto_btn)
+
+        contrast_capsule_layout = QVBoxLayout()
+        contrast_capsule_layout.addLayout(contrast_row)
+        contrast_capsule = self._create_capsule(contrast_capsule_layout)
+        left_layout.addWidget(contrast_capsule)
+
+        # Capsule 8: Data Actions Capsule
+        actions_capsule_layout = QVBoxLayout()
 
         row1_layout = QHBoxLayout()
         save_btn = QPushButton("Save Progress")
@@ -1477,7 +1581,7 @@ class BandStitchProApp(BandViewsMixin, QWidget):
         export_btn.setToolTip("Export currently displayed image")
         export_btn.clicked.connect(self.export_current_image)
         row1_layout.addWidget(export_btn)
-        # Second row: Reload | Refresh
+
         row2_layout = QHBoxLayout()
         reload_btn = QPushButton("Reload")
         reload_btn.setToolTip("Reload folder data")
@@ -1487,8 +1591,12 @@ class BandStitchProApp(BandViewsMixin, QWidget):
         refresh_tab_btn.setToolTip("Refresh current tab")
         refresh_tab_btn.clicked.connect(self.refresh_current_tab)
         row2_layout.addWidget(refresh_tab_btn)
-        param_layout.addLayout(row1_layout)
-        param_layout.addLayout(row2_layout)
+
+        actions_capsule_layout.addLayout(row1_layout)
+        actions_capsule_layout.addLayout(row2_layout)
+
+        actions_capsule = self._create_capsule(actions_capsule_layout)
+        left_layout.addWidget(actions_capsule)
 
         left_layout.addStretch()
 
@@ -1699,18 +1807,9 @@ class BandStitchProApp(BandViewsMixin, QWidget):
         individual_bands_layout.setSpacing(4)
         self.individual_bands_tab.setLayout(individual_bands_layout)
 
-        # Control toolbar for Individual Bands (Frame Mode & Range)
-        indiv_ctrl_widget = QWidget()
-        indiv_ctrl_widget.setStyleSheet("""
-            QWidget#indivCtrlWidget {
-                background: rgba(255, 255, 255, 0.03);
-                border: 1px solid rgba(255, 255, 255, 0.08);
-                border-radius: 6px;
-            }
-        """)
-        indiv_ctrl_widget.setObjectName("indivCtrlWidget")
-        indiv_ctrl_layout = QHBoxLayout(indiv_ctrl_widget)
-        indiv_ctrl_layout.setContentsMargins(10, 5, 10, 5)
+        # Control toolbar for Individual Bands (Frame Mode & Range) - CAPSULE WRAPPED
+        indiv_ctrl_layout = QHBoxLayout()
+        indiv_ctrl_layout.setContentsMargins(6, 4, 6, 4)
         indiv_ctrl_layout.setSpacing(14)
 
         # Frame Mode Radio buttons
@@ -1738,13 +1837,14 @@ class BandStitchProApp(BandViewsMixin, QWidget):
         _sync_indiv_range_enabled()
 
         indiv_ctrl_layout.addStretch()
+        indiv_ctrl_widget = self._create_capsule(indiv_ctrl_layout)
         individual_bands_layout.addWidget(indiv_ctrl_widget)
 
-        self.band_checkbox_container = QWidget()
-        self.band_checkbox_layout = QGridLayout(self.band_checkbox_container)
+        self.band_checkbox_layout = QGridLayout()
         self.band_checkbox_layout.setContentsMargins(6, 4, 6, 4)
         self.band_checkbox_layout.setHorizontalSpacing(4)
         self.band_checkbox_layout.setVerticalSpacing(2)
+        self.band_checkbox_container = self._create_capsule(self.band_checkbox_layout)
         individual_bands_layout.addWidget(self.band_checkbox_container)
         self.individual_bands_notebook = QTabWidget()
         # Consistently use setup_tab_connections for connecting up the notebook logic
@@ -1781,18 +1881,11 @@ class BandStitchProApp(BandViewsMixin, QWidget):
             pixel_info_callback=self.update_pixel_info,
             matrix_size_var=self.matrix_size_var
         )
-        self.preview_frame = QGroupBox("RGB Fusion Preview")
-        preview_layout = QVBoxLayout()
-        preview_layout.setContentsMargins(6, 6, 6, 6)
-        self.preview_frame.setLayout(preview_layout)
-        preview_layout.addWidget(self.rgb_preview_viewer)
-        fusion_layout.addWidget(self.preview_frame, 1) # Stretch to expand
-        # Bottom: controls panel (fixed height)
-        controls_frame = QGroupBox("RGB Channel Configuration")
+        fusion_layout.addWidget(self.rgb_preview_viewer, 1) # Stretch to expand
+        # Bottom: controls panel (fixed height) - CAPSULE WRAPPED
         controls_layout = QHBoxLayout()
         controls_layout.setContentsMargins(8, 6, 8, 6)
         controls_layout.setSpacing(12)
-        controls_frame.setLayout(controls_layout)
         # Channel mapping and offsets (vertical rows now)
         map_widget = QWidget()
         map_layout = QVBoxLayout() # Changed to vertical for rows
@@ -1879,7 +1972,8 @@ class BandStitchProApp(BandViewsMixin, QWidget):
         self.auto_preview_rgb.setChecked(True)
         actions_layout.addWidget(self.auto_preview_rgb)
         controls_layout.addWidget(actions_widget, 0)
-        fusion_layout.addWidget(controls_frame, 0) # Controls at bottom (no stretch)
+        controls_capsule = self._create_capsule(controls_layout)
+        fusion_layout.addWidget(controls_capsule, 0) # Controls at bottom (no stretch)
         #self.view_tabs.addTab(self.fusion_tab, "RGB Fusion")
         self._set_custom_close_button(self.view_tabs.count() - 1)
         # Auto-preview connections
@@ -2036,11 +2130,20 @@ class BandStitchProApp(BandViewsMixin, QWidget):
     def _on_view_checkbox_toggled(self, name, checked):
         if checked:
             self._add_view_tab(name)
-            # NEW: Handle if previously unloaded
+            # Handle if previously unloaded or newly added
             tab_key = name.lower().replace(' ', '_')
             if tab_key in self.unloaded_keys:
                 self.unloaded_keys.discard(tab_key)
                 QTimer.singleShot(0, lambda: self._reload_tab_data(tab_key))
+            else:
+                if name == "Individual Bands":
+                    QTimer.singleShot(0, self.update_individual_bands_view)
+                elif name == "All Bands":
+                    QTimer.singleShot(0, self.update_all_bands_view)
+                elif name == "RGB Fusion":
+                    QTimer.singleShot(0, self.preview_rgb_fusion)
+                elif name == "Histogram":
+                    QTimer.singleShot(0, self.update_histogram_view)
         else:
             idx = -1
             for i in range(self.view_tabs.count()):
@@ -2051,8 +2154,228 @@ class BandStitchProApp(BandViewsMixin, QWidget):
                 widget = self.view_tabs.widget(idx)
                 self.unload_view_widget(widget, name)
                 self.view_tabs.removeTab(idx)
-                widget.deleteLater()
+                # Do NOT delete the widget container! Keep it intact for reuse.
                 gc.collect()
+
+    def _recreate_individual_bands_tab(self):
+        self.individual_bands_tab = QWidget()
+        individual_bands_layout = QVBoxLayout()
+        individual_bands_layout.setContentsMargins(4, 4, 4, 4)
+        individual_bands_layout.setSpacing(4)
+        self.individual_bands_tab.setLayout(individual_bands_layout)
+
+        indiv_ctrl_layout = QHBoxLayout()
+        indiv_ctrl_layout.setContentsMargins(6, 4, 6, 4)
+        indiv_ctrl_layout.setSpacing(14)
+
+        if not self._qt_alive(getattr(self, 'frame_mode_single', None)):
+            self.frame_mode_single = QRadioButton("Single Frame")
+            self.frame_mode_single.setChecked(True)
+        if not self._qt_alive(getattr(self, 'frame_mode_range', None)):
+            self.frame_mode_range = QRadioButton("Frame Range")
+        if not self._qt_alive(getattr(self, 'frame_mode_var', None)):
+            self.frame_mode_var = QButtonGroup()
+            self.frame_mode_var.addButton(self.frame_mode_single, 0)
+            self.frame_mode_var.addButton(self.frame_mode_range, 1)
+
+        indiv_ctrl_layout.addWidget(self.frame_mode_single)
+        indiv_ctrl_layout.addWidget(self.frame_mode_range)
+
+        if not self._qt_alive(getattr(self, 'start_frame_entry', None)):
+            self.start_frame_entry = QSpinBox()
+            self.start_frame_entry.setRange(1, 1000)
+            self.start_frame_entry.setValue(1)
+        if not self._qt_alive(getattr(self, 'end_frame_entry', None)):
+            self.end_frame_entry = QSpinBox()
+            self.end_frame_entry.setRange(1, 1000)
+            self.end_frame_entry.setValue(1)
+
+        indiv_ctrl_layout.addSpacing(8)
+        lbl_start = QLabel("Start:")
+        indiv_ctrl_layout.addWidget(lbl_start)
+        indiv_ctrl_layout.addWidget(self.start_frame_entry)
+        lbl_end = QLabel("End:")
+        indiv_ctrl_layout.addWidget(lbl_end)
+        indiv_ctrl_layout.addWidget(self.end_frame_entry)
+
+        def _sync_indiv_range_enabled(checked=None):
+            try:
+                is_range = self.frame_mode_range.isChecked()
+                self.start_frame_entry.setEnabled(is_range)
+                self.end_frame_entry.setEnabled(is_range)
+                lbl_start.setEnabled(is_range)
+                lbl_end.setEnabled(is_range)
+            except Exception:
+                pass
+
+        try:
+            self.frame_mode_range.toggled.connect(_sync_indiv_range_enabled)
+        except Exception:
+            pass
+        _sync_indiv_range_enabled()
+
+        indiv_ctrl_layout.addStretch()
+        indiv_ctrl_widget = self._create_capsule(indiv_ctrl_layout)
+        individual_bands_layout.addWidget(indiv_ctrl_widget)
+
+        self.band_checkbox_layout = QGridLayout()
+        self.band_checkbox_layout.setContentsMargins(6, 4, 6, 4)
+        self.band_checkbox_layout.setHorizontalSpacing(4)
+        self.band_checkbox_layout.setVerticalSpacing(2)
+        self.band_checkbox_container = self._create_capsule(self.band_checkbox_layout)
+        individual_bands_layout.addWidget(self.band_checkbox_container)
+
+        self.individual_bands_notebook = QTabWidget()
+        try:
+            self.individual_bands_notebook.currentChanged.connect(self.on_individual_tab_changed)
+        except Exception:
+            pass
+        individual_bands_layout.addWidget(self.individual_bands_notebook, 1)
+
+        # Repopulate band checkboxes if data already loaded
+        if hasattr(self, 'band_frames') and self.band_frames:
+            self.band_enabled = {key: QCheckBox() for key in self.band_frames}
+            for key, cb in sorted(self.band_enabled.items(), key=lambda x: x[0]):
+                cb.setChecked(True)
+                cb.setText(key)
+                cb.stateChanged.connect(lambda state, k=key: self.toggle_band(k, state))
+                self.band_checkbox_layout.addWidget(cb)
+
+    def _recreate_fusion_tab(self):
+        self.fusion_tab = QWidget()
+        fusion_layout = QVBoxLayout()
+        fusion_layout.setContentsMargins(6, 6, 6, 6)
+        fusion_layout.setSpacing(8)
+        self.fusion_tab.setLayout(fusion_layout)
+
+        self.rgb_preview_viewer = GraphicsImageViewer(
+            parent=self,
+            pixel_info_callback=self.update_pixel_info,
+            matrix_size_var=self.matrix_size_var
+        )
+        fusion_layout.addWidget(self.rgb_preview_viewer, 1)
+
+        controls_layout = QHBoxLayout()
+        controls_layout.setContentsMargins(8, 6, 8, 6)
+        controls_layout.setSpacing(12)
+
+        map_widget = QWidget()
+        map_layout = QVBoxLayout()
+        map_layout.setContentsMargins(0, 0, 0, 0)
+        map_layout.setSpacing(6)
+        map_widget.setLayout(map_layout)
+
+        if not self._qt_alive(getattr(self, 'red_band_var', None)):
+            self.red_band_var = QComboBox()
+            self.red_band_var.addItems([f"b{i}" for i in range(7)])
+            self.red_band_var.setCurrentText("b0")
+        if not self._qt_alive(getattr(self, 'rgb_offset_r_x', None)):
+            self.rgb_offset_r_x = QSpinBox()
+            self.rgb_offset_r_x.setRange(-10000, 10000)
+            self.rgb_offset_r_x.setValue(0)
+        if not self._qt_alive(getattr(self, 'rgb_offset_r_y', None)):
+            self.rgb_offset_r_y = QSpinBox()
+            self.rgb_offset_r_y.setRange(-10000, 10000)
+            self.rgb_offset_r_y.setValue(0)
+        red_row = QHBoxLayout()
+        red_row.addWidget(QLabel("Red:"))
+        red_row.addWidget(self.red_band_var)
+        red_row.addWidget(QLabel("X offset:"))
+        red_row.addWidget(self.rgb_offset_r_x)
+        red_row.addWidget(QLabel("Y offset:"))
+        red_row.addWidget(self.rgb_offset_r_y)
+        map_layout.addLayout(red_row)
+
+        if not self._qt_alive(getattr(self, 'green_band_var', None)):
+            self.green_band_var = QComboBox()
+            self.green_band_var.addItems([f"b{i}" for i in range(7)])
+            self.green_band_var.setCurrentText("b1")
+        if not self._qt_alive(getattr(self, 'rgb_offset_g_x', None)):
+            self.rgb_offset_g_x = QSpinBox()
+            self.rgb_offset_g_x.setRange(-10000, 10000)
+            self.rgb_offset_g_x.setValue(0)
+        if not self._qt_alive(getattr(self, 'rgb_offset_g_y', None)):
+            self.rgb_offset_g_y = QSpinBox()
+            self.rgb_offset_g_y.setRange(-10000, 10000)
+            self.rgb_offset_g_y.setValue(0)
+        green_row = QHBoxLayout()
+        green_row.addWidget(QLabel("Green:"))
+        green_row.addWidget(self.green_band_var)
+        green_row.addWidget(QLabel("X offset:"))
+        green_row.addWidget(self.rgb_offset_g_x)
+        green_row.addWidget(QLabel("Y offset:"))
+        green_row.addWidget(self.rgb_offset_g_y)
+        map_layout.addLayout(green_row)
+
+        if not self._qt_alive(getattr(self, 'blue_band_var', None)):
+            self.blue_band_var = QComboBox()
+            self.blue_band_var.addItems([f"b{i}" for i in range(7)])
+            self.blue_band_var.setCurrentText("b2")
+        if not self._qt_alive(getattr(self, 'rgb_offset_b_x', None)):
+            self.rgb_offset_b_x = QSpinBox()
+            self.rgb_offset_b_x.setRange(-10000, 10000)
+            self.rgb_offset_b_x.setValue(0)
+        if not self._qt_alive(getattr(self, 'rgb_offset_b_y', None)):
+            self.rgb_offset_b_y = QSpinBox()
+            self.rgb_offset_b_y.setRange(-10000, 10000)
+            self.rgb_offset_b_y.setValue(0)
+        blue_row = QHBoxLayout()
+        blue_row.addWidget(QLabel("Blue:"))
+        blue_row.addWidget(self.blue_band_var)
+        blue_row.addWidget(QLabel("X offset:"))
+        blue_row.addWidget(self.rgb_offset_b_x)
+        blue_row.addWidget(QLabel("Y offset:"))
+        blue_row.addWidget(self.rgb_offset_b_y)
+        map_layout.addLayout(blue_row)
+
+        controls_layout.addWidget(map_widget, 0)
+
+        mode_widget = QWidget()
+        mode_layout = QVBoxLayout()
+        mode_layout.setContentsMargins(0, 0, 0, 0)
+        mode_layout.setSpacing(4)
+        mode_widget.setLayout(mode_layout)
+        if not self._qt_alive(getattr(self, 'rgb_frame_mode_single', None)):
+            self.rgb_frame_mode_single = QRadioButton("Selected Frame")
+            self.rgb_frame_mode_single.setChecked(True)
+        if not self._qt_alive(getattr(self, 'rgb_frame_mode_all', None)):
+            self.rgb_frame_mode_all = QRadioButton("All Frames")
+        mode_layout.addWidget(self.rgb_frame_mode_single)
+        mode_layout.addWidget(self.rgb_frame_mode_all)
+        controls_layout.addWidget(mode_widget, 0)
+        controls_layout.addStretch(1)
+
+        actions_widget = QWidget()
+        actions_layout = QVBoxLayout()
+        actions_layout.setContentsMargins(0, 0, 0, 0)
+        actions_layout.setSpacing(4)
+        actions_widget.setLayout(actions_layout)
+        preview_btn = QPushButton("Preview RGB Fusion")
+        preview_btn.setToolTip("Preview RGB fusion")
+        preview_btn.clicked.connect(self.preview_rgb_fusion)
+        actions_layout.addWidget(preview_btn)
+        self.auto_preview_rgb = QCheckBox("Auto preview")
+        actions_layout.addWidget(self.auto_preview_rgb)
+        controls_layout.addWidget(actions_widget, 0)
+
+        fusion_capsule = self._create_capsule(controls_layout)
+        fusion_layout.addWidget(fusion_capsule, 0)
+
+    def _recreate_histogram_tab(self):
+        self.histogram_tab = QWidget()
+        histogram_layout = QVBoxLayout()
+        self.histogram_tab.setLayout(histogram_layout)
+        self.histogram_viewer = HistogramViewer()
+        try:
+            self.histogram_viewer.set_bitdepth(self.bitdepth)
+        except Exception:
+            pass
+        try:
+            self.histogram_viewer.mode_changed.connect(self.update_views)
+        except Exception:
+            pass
+        histogram_layout.addWidget(self.histogram_viewer)
+
     def _add_view_tab(self, name):
         for i in range(self.view_tabs.count()):
             if self.view_tabs.tabText(i) == name:
@@ -2061,27 +2384,42 @@ class BandStitchProApp(BandViewsMixin, QWidget):
         widget = None
         if attr and hasattr(self, attr):
             widget = getattr(self, attr)
+        if widget is not None and not self._qt_alive(widget):
+            widget = None
         if widget is not None:
             try:
                 parent = widget.parent()
-                if parent is not None:
+                if parent is not None and parent is not self.view_tabs:
                     widget.setParent(None)
             except RuntimeError:
                 widget = None
         if widget is None:
-            widget = QWidget()
-            l = QVBoxLayout(widget)
-            l.addWidget(QLabel(f"{name} (placeholder)"))
+            if name == "Individual Bands":
+                self._recreate_individual_bands_tab()
+                widget = self.individual_bands_tab
+            elif name == "All Bands":
+                self.all_bands_viewer = GraphicsImageViewer(
+                    parent=self,
+                    pixel_info_callback=self.update_pixel_info,
+                    matrix_size_var=self.matrix_size_var
+                )
+                widget = self.all_bands_viewer
+            elif name == "RGB Fusion":
+                self._recreate_fusion_tab()
+                widget = self.fusion_tab
+            elif name == "Histogram":
+                self._recreate_histogram_tab()
+                widget = self.histogram_tab
+            else:
+                widget = QWidget()
+                l = QVBoxLayout(widget)
+                l.addWidget(QLabel(f"{name}"))
         try:
             idx = self.view_tabs.count()
             self.view_tabs.addTab(widget, name)
         except RuntimeError as e:
-            print(f"[DEBUG] Failed to add tab '{name}': {e} - adding a fresh placeholder instead")
-            widget = QWidget()
-            l = QVBoxLayout(widget)
-            l.addWidget(QLabel(f"{name} (placeholder - fallback)"))
-            idx = self.view_tabs.count()
-            self.view_tabs.addTab(widget, name)
+            print(f"[DEBUG] Failed to add tab '{name}': {e}")
+            return
         try:
             self._set_custom_close_button(idx)
         except Exception as e:
@@ -2112,7 +2450,7 @@ class BandStitchProApp(BandViewsMixin, QWidget):
                 try:
                     if name == "Individual Bands":
                         # clear per-band viewers if any
-                        if hasattr(self, 'individual_bands_notebook'):
+                        if self._qt_alive(getattr(self, 'individual_bands_notebook', None)):
                             for j in range(self.individual_bands_notebook.count()):
                                 w = self.individual_bands_notebook.widget(j)
                                 if w and w.layout() and w.layout().count() > 0:
@@ -2423,50 +2761,65 @@ class BandStitchProApp(BandViewsMixin, QWidget):
             return
         if not self._qt_alive(getattr(self, 'view_tabs', None)):
             return
-        # Free/unload previous tab's large data if applicable
-        if hasattr(self, '_last_tab_index') and self._last_tab_index >= 0 and self._last_tab_index != index:
-            prev_tab_name = self.view_tabs.tabText(self._last_tab_index)
-            prev_tab_key = prev_tab_name.lower().replace(' ', '_')
-            # Save individual sub-tab viewer state before unloading
-            if prev_tab_key == 'individual_bands' and hasattr(self, 'individual_bands_notebook'):
-                current_sub = self.individual_bands_notebook.currentIndex()
-                if current_sub >= 0:
-                    self._save_individual_viewer_state(current_sub)
-            elif prev_tab_key in self.access_times:  # Only unload non-individual tabs
-                self._unload_data_only(prev_tab_key)
-                if prev_tab_key not in self.unloaded_keys:
-                    self.unloaded_keys.add(prev_tab_key)
-        tab_name = self.view_tabs.tabText(index)
-        tab_key = tab_name.lower().replace(' ', '_')
-        if tab_key in ['all_bands', 'rgb_fusion', 'histogram']:
-            self.access_times[tab_key] = time.time()
-            if tab_key in self.unloaded_keys:
-                self._reload_tab_data(tab_key)
-                self.unloaded_keys.discard(tab_key)
-        elif tab_key == 'individual_bands' and hasattr(self, 'individual_bands_notebook'):
-            sub_index = self.individual_bands_notebook.currentIndex()
-            if sub_index >= 0:
-                # Trigger the consolidated sub-tab handler to restore state/load data
-                self.on_individual_tab_changed(sub_index)
-        self._last_tab_index = index
+        try:
+            # Free/unload previous tab's large data if applicable
+            if hasattr(self, '_last_tab_index') and self._last_tab_index >= 0 and self._last_tab_index != index:
+                try:
+                    prev_tab_name = self.view_tabs.tabText(self._last_tab_index)
+                    prev_tab_key = prev_tab_name.lower().replace(' ', '_')
+                    # Save individual sub-tab viewer state before unloading
+                    if prev_tab_key == 'individual_bands' and self._qt_alive(getattr(self, 'individual_bands_notebook', None)):
+                        current_sub = self.individual_bands_notebook.currentIndex()
+                        if current_sub >= 0:
+                            self._save_individual_viewer_state(current_sub)
+                    elif prev_tab_key in self.access_times:  # Only unload non-individual tabs
+                        self._unload_data_only(prev_tab_key)
+                        if prev_tab_key not in self.unloaded_keys:
+                            self.unloaded_keys.add(prev_tab_key)
+                except Exception:
+                    pass
+            try:
+                tab_name = self.view_tabs.tabText(index)
+            except Exception:
+                return
+            tab_key = tab_name.lower().replace(' ', '_')
+            if tab_key in ['all_bands', 'rgb_fusion', 'histogram']:
+                self.access_times[tab_key] = time.time()
+                if tab_key in self.unloaded_keys:
+                    self._reload_tab_data(tab_key)
+                    self.unloaded_keys.discard(tab_key)
+            elif tab_key == 'individual_bands' and self._qt_alive(getattr(self, 'individual_bands_notebook', None)):
+                try:
+                    sub_index = self.individual_bands_notebook.currentIndex()
+                    if sub_index >= 0:
+                        # Trigger the consolidated sub-tab handler to restore state/load data
+                        self.on_individual_tab_changed(sub_index)
+                except Exception:
+                    pass
+            self._last_tab_index = index
 
-        current_hash = self._compute_param_hash()
-        if tab_name == "All Bands":
-            self._update_cached_view('all_bands', self.update_all_bands_view)
-        elif tab_name == "Individual Bands":
-            # Only do a full rebuild if no sub-tabs exist yet or params changed.
-            # Individual band tabs persist across main-tab switches so we avoid
-            # the destructive update_individual_bands_view when they are still loaded.
-            needs_rebuild = (self.individual_bands_notebook.count() == 0
-                             or self._individual_bands_built_hash != current_hash)
-            if needs_rebuild:
-                self._update_cached_view('individual_bands', self.update_individual_bands_view)
-                self._individual_bands_built_hash = current_hash
-        elif tab_name == "Histogram":
-            self.update_histogram_view() # Histogram is cheap, no cache needed
-        elif tab_name == "RGB Fusion":
-            self.preview_rgb_fusion()
-        #self.refresh()
+            current_hash = self._compute_param_hash()
+            if tab_name == "All Bands":
+                self._update_cached_view('all_bands', self.update_all_bands_view)
+            elif tab_name == "Individual Bands":
+                # Only do a full rebuild if no sub-tabs exist yet or params changed.
+                # Individual band tabs persist across main-tab switches so we avoid
+                # the destructive update_individual_bands_view when they are still loaded.
+                if self._qt_alive(getattr(self, 'individual_bands_notebook', None)):
+                    try:
+                        needs_rebuild = (self.individual_bands_notebook.count() == 0
+                                         or self._individual_bands_built_hash != current_hash)
+                        if needs_rebuild:
+                            self._update_cached_view('individual_bands', self.update_individual_bands_view)
+                            self._individual_bands_built_hash = current_hash
+                    except Exception:
+                        pass
+            elif tab_name == "Histogram":
+                self.update_histogram_view() # Histogram is cheap, no cache needed
+            elif tab_name == "RGB Fusion":
+                self.preview_rgb_fusion()
+        except Exception as e:
+            print(f"on_tab_changed safe caught error: {e}")
 
     def _keep_main_window_on_screen(self):
         """Clamp the top-level window geometry to the current screen."""
@@ -2512,18 +2865,23 @@ class BandStitchProApp(BandViewsMixin, QWidget):
     def on_sub_tab_changed(self, sub_index):
         if sub_index < 0:
             return
-        widget = self.individual_bands_notebook.widget(sub_index)
-        if hasattr(widget, 'key'):
-            key = widget.key
-            self.access_times[key] = time.time()
-            # Prevent reentrant reload loops and segfaults from repeated tab-change cycles.
-            if key in self.unloaded_keys and not getattr(self, '_is_reloading_band', False):
-                self._is_reloading_band = True
-                try:
-                    self._reload_band_data(key)
-                    self.unloaded_keys.discard(key)
-                finally:
-                    self._is_reloading_band = False
+        if not self._qt_alive(getattr(self, 'individual_bands_notebook', None)):
+            return
+        try:
+            widget = self.individual_bands_notebook.widget(sub_index)
+            if hasattr(widget, 'key'):
+                key = widget.key
+                self.access_times[key] = time.time()
+                # Prevent reentrant reload loops and segfaults from repeated tab-change cycles.
+                if key in self.unloaded_keys and not getattr(self, '_is_reloading_band', False):
+                    self._is_reloading_band = True
+                    try:
+                        self._reload_band_data(key)
+                        self.unloaded_keys.discard(key)
+                    finally:
+                        self._is_reloading_band = False
+        except Exception:
+            pass
     def _reload_tab_data(self, tab_key):
         if tab_key == 'all_bands':
             self.update_all_bands_view()
@@ -2694,6 +3052,8 @@ class BandStitchProApp(BandViewsMixin, QWidget):
         gc.collect()
         print(f"[DEBUG] GC collected after _unload_data_only for {key}")
     def handle_memory_pressure(self):
+        if psutil is None:
+            return
         usage = psutil.virtual_memory().percent
         # Only start unloading once we are above the 90% threshold
         if usage < 90.0:
@@ -2707,7 +3067,7 @@ class BandStitchProApp(BandViewsMixin, QWidget):
         # NEW: Emit signal for main-thread unload (instead of direct call)
         self.memory_monitor.unload_request.emit(lru_key)
         gc.collect()
-        if psutil.virtual_memory().percent >= 87.0:
+        if psutil and psutil.virtual_memory().percent >= 87.0:
             QTimer.singleShot(500, self.handle_memory_pressure)
     def _update_cached_view(self, cache_key, update_func):
         cache = self.view_cache.get(cache_key, {})
@@ -2847,7 +3207,18 @@ class BandStitchProApp(BandViewsMixin, QWidget):
                 "blue": self.blue_band_var.currentText()
             },
             "band_offsets": self.band_offsets,
-            "band_binning": getattr(self, 'band_binning', {})
+            "band_binning": getattr(self, 'band_binning', {}),
+            "band_stack_order": list(getattr(self, 'band_stack_order', []) or []),
+            "fit_mode": int(self.fit_mode_var.checkedId()) if hasattr(self, 'fit_mode_var') else 1,
+            "histogram_settings": {
+                "single_frame": bool(getattr(self.histogram_viewer, 'single_frame_radio', None) and self.histogram_viewer.single_frame_radio.isChecked()),
+                "freehand": bool(getattr(self.histogram_viewer, 'freehand_btn', None) and self.histogram_viewer.freehand_btn.isChecked()),
+            } if hasattr(self, 'histogram_viewer') and self.histogram_viewer is not None else {},
+            "frame_range": {
+                "start": self.start_frame_entry.value() if hasattr(self, 'start_frame_entry') else 1,
+                "end": self.end_frame_entry.value() if hasattr(self, 'end_frame_entry') else 1,
+                "mode": "range" if hasattr(self, 'frame_mode_range') and self.frame_mode_range.isChecked() else "single"
+            }
         }
 
         try:
@@ -2928,6 +3299,54 @@ class BandStitchProApp(BandViewsMixin, QWidget):
                     self.offset_spins[f"{band_key}_y"].setValue(offsets["y"])
                 self.band_offsets[band_key]["x"] = self.offset_spins[f"{band_key}_x"].value()
                 self.band_offsets[band_key]["y"] = self.offset_spins[f"{band_key}_y"].value()
+
+            if "band_stack_order" in params:
+                saved_stack = params.get("band_stack_order", [])
+                if isinstance(saved_stack, list) and saved_stack:
+                    self.band_stack_order = saved_stack.copy()
+                    if hasattr(self, '_rebuild_stack_order_ui'):
+                        try:
+                            self._rebuild_stack_order_ui()
+                        except Exception:
+                            pass
+
+            if "fit_mode" in params and hasattr(self, 'fit_mode_var'):
+                try:
+                    fit_id = int(params["fit_mode"])
+                    btn = self.fit_mode_var.button(fit_id)
+                    if btn:
+                        btn.setChecked(True)
+                except Exception:
+                    pass
+
+            hist_settings = params.get("histogram_settings", {})
+            if hist_settings and hasattr(self, 'histogram_viewer') and self.histogram_viewer is not None:
+                try:
+                    if "single_frame" in hist_settings:
+                        is_single = hist_settings["single_frame"]
+                        if is_single and hasattr(self.histogram_viewer, 'single_frame_radio'):
+                            self.histogram_viewer.single_frame_radio.setChecked(True)
+                        elif not is_single and hasattr(self.histogram_viewer, 'frame_range_radio'):
+                            self.histogram_viewer.frame_range_radio.setChecked(True)
+                    if hasattr(self.histogram_viewer, 'freehand_btn'):
+                        self.histogram_viewer.freehand_btn.setChecked(bool(hist_settings.get("freehand", True)))
+                except Exception:
+                    pass
+
+            frame_range = params.get("frame_range", {})
+            if frame_range:
+                try:
+                    if "start" in frame_range and hasattr(self, 'start_frame_entry'):
+                        self.start_frame_entry.setValue(int(frame_range["start"]))
+                    if "end" in frame_range and hasattr(self, 'end_frame_entry'):
+                        self.end_frame_entry.setValue(int(frame_range["end"]))
+                    if frame_range.get("mode") == "range" and hasattr(self, 'frame_mode_range'):
+                        self.frame_mode_range.setChecked(True)
+                    elif hasattr(self, 'frame_mode_single'):
+                        self.frame_mode_single.setChecked(True)
+                except Exception:
+                    pass
+
             return True
         except Exception as e:
             print(f"Failed to load parameters: {e}")

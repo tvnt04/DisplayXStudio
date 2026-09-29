@@ -204,10 +204,41 @@ class PixelInfoWidget(QWidget):
             self.info_text.setPlainText(text)
 
 class TiledDisplay(QWidget):
+    def _is_dark_theme(self):
+        from utils import is_dark_theme
+        return is_dark_theme()
+
+    def _create_pill_capsule(self, layout):
+        card = QWidget()
+        card.setObjectName("pill_card")
+        dark = self._is_dark_theme()
+        if dark:
+            card.setStyleSheet("""
+                QWidget#pill_card {
+                    background-color: rgba(30, 34, 40, 0.65);
+                    border: 1px solid rgba(255, 255, 255, 0.08);
+                    border-radius: 8px;
+                }
+            """)
+        else:
+            card.setStyleSheet("""
+                QWidget#pill_card {
+                    background-color: rgba(255, 255, 255, 0.9);
+                    border: 1px solid rgba(0, 0, 0, 0.12);
+                    border-radius: 8px;
+                }
+            """)
+        layout.setContentsMargins(6, 4, 6, 4)
+        layout.setSpacing(5)
+        card.setLayout(layout)
+        card.setFixedHeight(30)
+        return card
+
     def __init__(self, parent=None):
         super().__init__(parent)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setSpacing(6)
 
         # Initial theme detection
         app = QApplication.instance()
@@ -219,7 +250,7 @@ class TiledDisplay(QWidget):
 
         # Toolbar
         top_bar = QHBoxLayout()
-        top_bar.setContentsMargins(10, 5, 10, 5)
+        top_bar.setContentsMargins(0, 0, 0, 0)
         self.btn_load = QPushButton("Load / Settings")
         self.btn_load.setToolTip("Load tiles and open tiled settings")
         self.btn_load.clicked.connect(self.open_settings)
@@ -250,11 +281,12 @@ class TiledDisplay(QWidget):
         self.chk_tile_tab.stateChanged.connect(self.toggle_tile_tab)
         top_bar.addWidget(self.chk_tile_tab)
 
-        layout.addLayout(top_bar)
+        top_bar_capsule = self._create_pill_capsule(top_bar)
+        layout.addWidget(top_bar_capsule)
 
         # Navigation
         nav = QHBoxLayout()
-        nav.setContentsMargins(10, 5, 10, 5)
+        nav.setContentsMargins(0, 0, 0, 0)
 
         self.play_btn = QPushButton("Play")
         self.play_btn.setToolTip("Play or pause frame sequence")
@@ -293,7 +325,9 @@ class TiledDisplay(QWidget):
         nav.addWidget(zoom_out)
         nav.addWidget(zoom_fit)
         nav.addWidget(zoom_100)
-        layout.addLayout(nav)
+
+        nav_capsule = self._create_pill_capsule(nav)
+        layout.addWidget(nav_capsule)
 
         # Tabs
         self.tab_widget = QTabWidget()

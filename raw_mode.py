@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import (
     QToolButton, QMenu, QApplication, QShortcut, QGroupBox, QTextEdit
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
-from PyQt5.QtGui import QKeySequence
+from PyQt5.QtGui import QKeySequence, QPalette
 from image_viewer import GraphicsImageViewer
 from ui_components import HistogramViewer, PixelInfoBox
 from utils import (
@@ -379,6 +379,35 @@ class RawLoadingThread(QThread):
             self.error.emit(f"Error: {str(e)}")
 
 class RawViewer(QWidget):
+    def _is_dark_theme(self):
+        from utils import is_dark_theme
+        return is_dark_theme()
+
+    def _create_capsule(self, layout):
+        card = QWidget()
+        card.setObjectName("capsule_card")
+        dark = self._is_dark_theme()
+        if dark:
+            card.setStyleSheet("""
+                QWidget#capsule_card {
+                    background-color: rgba(30, 34, 40, 0.65);
+                    border: 1px solid rgba(255, 255, 255, 0.08);
+                    border-radius: 10px;
+                }
+            """)
+        else:
+            card.setStyleSheet("""
+                QWidget#capsule_card {
+                    background-color: rgba(255, 255, 255, 0.9);
+                    border: 1px solid rgba(0, 0, 0, 0.12);
+                    border-radius: 10px;
+                }
+            """)
+        layout.setContentsMargins(6, 4, 6, 4)
+        layout.setSpacing(6)
+        card.setLayout(layout)
+        return card
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.raw_data = None
@@ -406,16 +435,13 @@ class RawViewer(QWidget):
         self.matrix_size_var.setRange(1, 11)
         self.matrix_size_var.setValue(5)
         self.matrix_size_var.setMaximumWidth(50)
-        self.matrix_size_var.setVisible(False)
-
         # ===== GROUPED TOOLBAR =====
         control_layout = QHBoxLayout()
         control_layout.setContentsMargins(5, 5, 5, 5)
         control_layout.setSpacing(8)
 
-        file_group = QGroupBox("")
         file_group_layout = QHBoxLayout()
-        file_group_layout.setContentsMargins(6, 6, 6, 6)
+        file_group_layout.setContentsMargins(4, 4, 4, 4)
         file_group_layout.setSpacing(6)
 
         self.load_btn = QPushButton("Load")
@@ -437,12 +463,11 @@ class RawViewer(QWidget):
         self.params_btn.setToolTip("Edit image parameters")
         self.params_btn.clicked.connect(self.edit_params)
         file_group_layout.addWidget(self.params_btn)
-        file_group.setLayout(file_group_layout)
-        control_layout.addWidget(file_group)
+        file_capsule = self._create_capsule(file_group_layout)
+        control_layout.addWidget(file_capsule)
 
-        frame_group = QGroupBox("")
         frame_group_layout = QHBoxLayout()
-        frame_group_layout.setContentsMargins(6, 6, 6, 6)
+        frame_group_layout.setContentsMargins(4, 4, 4, 4)
         frame_group_layout.setSpacing(6)
         frame_group_layout.addWidget(QLabel("Frame:"))
         self.prev_frame_btn = QPushButton("<")
@@ -484,12 +509,11 @@ class RawViewer(QWidget):
         self.speed_combo.setEnabled(False)
         frame_group_layout.addWidget(self.speed_combo)
 
-        frame_group.setLayout(frame_group_layout)
-        control_layout.addWidget(frame_group)
+        frame_capsule = self._create_capsule(frame_group_layout)
+        control_layout.addWidget(frame_capsule)
 
-        contrast_group = QGroupBox("")
         contrast_group_layout = QHBoxLayout()
-        contrast_group_layout.setContentsMargins(6, 6, 6, 6)
+        contrast_group_layout.setContentsMargins(4, 4, 4, 4)
         contrast_group_layout.setSpacing(6)
         self.enhance_cb = QCheckBox("Auto Contrast")
         self.enhance_cb.setChecked(False)
@@ -516,12 +540,11 @@ class RawViewer(QWidget):
         self.max_spin.setToolTip("Maximum value")
         self.max_spin.valueChanged.connect(self.update_display)
         contrast_group_layout.addWidget(self.max_spin)
-        contrast_group.setLayout(contrast_group_layout)
-        control_layout.addWidget(contrast_group)
+        contrast_capsule = self._create_capsule(contrast_group_layout)
+        control_layout.addWidget(contrast_capsule)
 
-        range_group = QGroupBox("")
         range_group_layout = QHBoxLayout()
-        range_group_layout.setContentsMargins(6, 6, 6, 6)
+        range_group_layout.setContentsMargins(4, 4, 4, 4)
         range_group_layout.setSpacing(6)
         # Stack button
         self.stack_btn = QPushButton("Create Stack")
@@ -564,12 +587,11 @@ class RawViewer(QWidget):
         self.range_end_spin.editingFinished.connect(self._on_range_spin_changed)
         range_group_layout.addWidget(self.range_end_spin)
 
-        range_group.setLayout(range_group_layout)
-        control_layout.addWidget(range_group)
+        range_capsule = self._create_capsule(range_group_layout)
+        control_layout.addWidget(range_capsule)
 
-        export_group = QGroupBox("")
         export_group_layout = QHBoxLayout()
-        export_group_layout.setContentsMargins(6, 6, 6, 6)
+        export_group_layout.setContentsMargins(4, 4, 4, 4)
         export_group_layout.setSpacing(6)
         self.export_btn = QPushButton("Export")
         self.export_btn.setMaximumWidth(70)
@@ -577,8 +599,8 @@ class RawViewer(QWidget):
         self.export_btn.clicked.connect(self.export_current)
         self.export_btn.setEnabled(False)
         export_group_layout.addWidget(self.export_btn)
-        export_group.setLayout(export_group_layout)
-        control_layout.addWidget(export_group)
+        export_capsule = self._create_capsule(export_group_layout)
+        control_layout.addWidget(export_capsule)
         control_layout.addStretch()
         layout.addLayout(control_layout)
 

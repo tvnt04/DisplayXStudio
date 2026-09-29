@@ -1,9 +1,11 @@
-# band_views.py (modified)
 import numpy as np
 from PIL import Image
 import gc
 import re
-import psutil
+try:
+    import psutil
+except ImportError:
+    psutil = None
 from PyQt5.QtWidgets import QMessageBox, QWidget, QVBoxLayout, QCheckBox, QLabel, QProgressBar, QApplication
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QThread
 from image_viewer import GraphicsImageViewer
@@ -82,7 +84,7 @@ class IndividualBandWorker(QThread):
                 h = getattr(self.frames, 'h', 384)
                 bytes_per_frame = int(w) * int(h) * 2 * 3
                 estimated_bytes = bytes_per_frame * num_frames
-                safe_limit = int(psutil.virtual_memory().available * 0.30)
+                safe_limit = int(psutil.virtual_memory().available * 0.30) if psutil else 0
 
                 step = 1
                 if not self.force_all_frames and safe_limit > 0 and estimated_bytes > safe_limit:
@@ -1439,12 +1441,12 @@ class BandViewsMixin:
                     h = getattr(lf, 'h', 384)
                     bytes_per_frame = int(w) * int(h) * 2 * 3
                     estimated_bytes = bytes_per_frame * num_frames
-                    safe_limit = int(psutil.virtual_memory().available * 0.30)
+                    safe_limit = int(psutil.virtual_memory().available * 0.30) if psutil else 0
                     if safe_limit > 0 and estimated_bytes > safe_limit:
                         step = max(2, (estimated_bytes + safe_limit - 1) // safe_limit)
                         safe_frames = len(list(range(start_frame, end_frame + 1))[::step])
                         est_gb = estimated_bytes / (1024**3)
-                        avail_gb = psutil.virtual_memory().available / (1024**3)
+                        avail_gb = (psutil.virtual_memory().available / (1024**3)) if psutil else 0.0
                         msg = QMessageBox(self)
                         msg.setWindowTitle("Memory Warning")
                         msg.setIcon(QMessageBox.Warning)
@@ -1478,12 +1480,12 @@ class BandViewsMixin:
                     h = getattr(frames_obj, 'h', 384)
                     bytes_per_frame = int(w) * int(h) * 2 * 3
                     estimated_bytes = bytes_per_frame * num_frames
-                    safe_limit = int(psutil.virtual_memory().available * 0.30)
+                    safe_limit = int(psutil.virtual_memory().available * 0.30) if psutil else 0
                     if safe_limit > 0 and estimated_bytes > safe_limit:
                         step = max(2, (estimated_bytes + safe_limit - 1) // safe_limit)
                         safe_frames = len(list(range(start_frame, end_frame + 1))[::step])
                         est_gb = estimated_bytes / (1024**3)
-                        avail_gb = psutil.virtual_memory().available / (1024**3)
+                        avail_gb = (psutil.virtual_memory().available / (1024**3)) if psutil else 0.0
                         msg = QMessageBox(self)
                         msg.setWindowTitle("Memory Warning")
                         msg.setIcon(QMessageBox.Warning)

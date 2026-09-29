@@ -520,6 +520,33 @@ class PlaybackApp(QWidget):
         except Exception:
             pass
 
+    def _is_dark_theme(self):
+        from utils import is_dark_theme
+        return is_dark_theme()
+
+    def _create_capsule(self, layout):
+        card = QWidget()
+        card.setObjectName("capsule_card")
+        dark = self._is_dark_theme()
+        if dark:
+            card.setStyleSheet("""
+                QWidget#capsule_card {
+                    background-color: rgba(30, 34, 40, 0.65);
+                    border: 1px solid rgba(255, 255, 255, 0.08);
+                    border-radius: 10px;
+                }
+            """)
+        else:
+            card.setStyleSheet("""
+                QWidget#capsule_card {
+                    background-color: rgba(255, 255, 255, 0.9);
+                    border: 1px solid rgba(0, 0, 0, 0.12);
+                    border-radius: 10px;
+                }
+            """)
+        card.setLayout(layout)
+        return card
+
     def init_ui(self):
         main_layout = QHBoxLayout()
         self.setLayout(main_layout)
@@ -528,9 +555,12 @@ class PlaybackApp(QWidget):
         left_panel = QWidget()
         left_panel.setFixedWidth(300)
         left_layout = QVBoxLayout()
+        left_layout.setContentsMargins(0, 0, 0, 0)
         left_panel.setLayout(left_layout)
         main_layout.addWidget(left_panel, stretch=1)
 
+        # Capsule 1: Folder & Parameters
+        file_params_layout = QVBoxLayout()
         hb = QHBoxLayout()
         self.select_folder_btn = QPushButton("Select Folder")
         self.select_folder_btn.setToolTip("Select folder containing band files")
@@ -542,69 +572,68 @@ class PlaybackApp(QWidget):
         self.load_menu_btn.setToolTip("Open recent folders")
         self.load_menu_btn.clicked.connect(self._show_recent_menu)
         hb.addWidget(self.load_menu_btn)
-        left_layout.addLayout(hb)
+        file_params_layout.addLayout(hb)
 
-        left_layout.addWidget(QLabel("Height:"))
+        file_params_layout.addWidget(QLabel("Height:"))
         self.height_entry = QLineEdit(str(self.height))
-        left_layout.addWidget(self.height_entry)
+        file_params_layout.addWidget(self.height_entry)
         self.height_entry.editingFinished.connect(self.validate_height)
 
-        left_layout.addWidget(QLabel("Width:"))
+        file_params_layout.addWidget(QLabel("Width:"))
         self.width_entry = QLineEdit(str(self.width))
-        left_layout.addWidget(self.width_entry)
+        file_params_layout.addWidget(self.width_entry)
         self.width_entry.editingFinished.connect(self.validate_width)
 
-        left_layout.addWidget(QLabel("Bit Depth:"))
+        file_params_layout.addWidget(QLabel("Bit Depth:"))
         self.bitdepth_var = QComboBox()
         self.bitdepth_var.addItems(["8", "10", "12", "16", "32"])
         self.bitdepth_var.setCurrentText(str(self.bitdepth))
-        left_layout.addWidget(self.bitdepth_var)
+        file_params_layout.addWidget(self.bitdepth_var)
         self.bitdepth_var.currentIndexChanged.connect(self.invalidate_video)
 
-        left_layout.addWidget(QLabel("FPS:"))
+        file_params_layout.addWidget(QLabel("FPS:"))
         self.fps_var = QSpinBox()
         self.fps_var.setRange(1, 60)
         self.fps_var.setValue(self.fps)
-        left_layout.addWidget(self.fps_var)
+        file_params_layout.addWidget(self.fps_var)
         self.fps_var.valueChanged.connect(self.invalidate_video)
 
         # Frame range for generation (1-based)
-        left_layout.addWidget(QLabel("Start Frame:"))
+        file_params_layout.addWidget(QLabel("Start Frame:"))
         self.start_frame_spin = QSpinBox()
         self.start_frame_spin.setRange(1, 1000000000)
         self.start_frame_spin.setValue(1)
-        left_layout.addWidget(self.start_frame_spin)
+        file_params_layout.addWidget(self.start_frame_spin)
 
-        left_layout.addWidget(QLabel("End Frame:"))
+        file_params_layout.addWidget(QLabel("End Frame:"))
         self.end_frame_spin = QSpinBox()
         self.end_frame_spin.setRange(1, 1000000000)
         self.end_frame_spin.setValue(1)
-        left_layout.addWidget(self.end_frame_spin)
+        file_params_layout.addWidget(self.end_frame_spin)
 
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
         self.progress_bar.setVisible(False)
-        left_layout.addWidget(self.progress_bar)
+        file_params_layout.addWidget(self.progress_bar)
 
-        left_layout.addWidget(QLabel("Playback Speed:"))
+        file_params_layout.addWidget(QLabel("Playback Speed:"))
         self.speed_combo = QComboBox()
         self.speed_combo.addItems(["0.5x", "1.0x", "1.5x", "2.0x"])
         self.speed_combo.setCurrentText("1.0x")
         self.speed_combo.currentTextChanged.connect(self.change_speed)
         self.speed_combo.setEnabled(False)
-        left_layout.addWidget(self.speed_combo)
+        file_params_layout.addWidget(self.speed_combo)
 
         self.loop_checkbox = QCheckBox("Loop Video")
         self.loop_checkbox.setChecked(True)
-        self.loop_checkbox.stateChanged.connect(self.toggle_loop)
-        left_layout.addWidget(self.loop_checkbox)
+        file_params_layout.addWidget(self.loop_checkbox)
 
-        # RGB Fusion controls
-        rgb_group = QGroupBox("RGB Fusion")
+        file_params_capsule = self._create_capsule(file_params_layout)
+        left_layout.addWidget(file_params_capsule)
+
+        # Capsule 2: RGB Fusion controls
         rgb_layout = QVBoxLayout()
-        rgb_group.setLayout(rgb_layout)
-        left_layout.addWidget(rgb_group)
 
         self.rgb_mode_checkbox = QCheckBox("Enable RGB Fusion")
         self.rgb_mode_checkbox.stateChanged.connect(self.toggle_rgb_mode)
@@ -676,15 +705,21 @@ class PlaybackApp(QWidget):
         for sb in (self.red_offset_x, self.red_offset_y, self.green_offset_x, self.green_offset_y, self.blue_offset_x, self.blue_offset_y):
             sb.valueChanged.connect(self.invalidate_video)
 
+        rgb_capsule = self._create_capsule(rgb_layout)
+        left_layout.addWidget(rgb_capsule)
+
         # store quick mapping of discovered band files (key -> filepath)
         self.quick_band_files = {}
 
-        # Generate button placed at the bottom for user flow
+        # Capsule 3: Generate Video button
+        process_layout = QVBoxLayout()
         self.process_btn = QPushButton("Generate Video")
         self.process_btn.setToolTip("Generate video using current settings")
         self.process_btn.clicked.connect(self.generate_video)
         self.process_btn.setEnabled(False)
-        left_layout.addWidget(self.process_btn)
+        process_layout.addWidget(self.process_btn)
+        process_capsule = self._create_capsule(process_layout)
+        left_layout.addWidget(process_capsule)
 
         left_layout.addStretch()
 

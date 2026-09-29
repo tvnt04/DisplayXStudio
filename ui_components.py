@@ -2,10 +2,11 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QRadioButton, QGroupBox, QScrollArea, QTextEdit, QProgressBar,
     QCheckBox, QComboBox, QSlider, QSpinBox, QDoubleSpinBox, QFormLayout, QButtonGroup, QTabBar,
     QFileDialog, QMessageBox, QDialog, QLabel, QPushButton, QToolButton, QLineEdit, QApplication,
-    QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView, QSizePolicy, QStyle, QScrollBar
+    QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView, QSizePolicy, QStyle, QScrollBar,
+    QFrame
 )
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QThread, QEvent
-from PyQt5.QtGui import QTextCursor, QTextCharFormat, QColor, QBrush, QFont, QPalette
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QThread, QEvent, QRectF
+from PyQt5.QtGui import QTextCursor, QTextCharFormat, QColor, QBrush, QFont, QPalette, QPainterPath, QRegion
 import numpy as np
 import pyqtgraph as pg
 from utils import _compute_hist_for_key, check_memory_requirement
@@ -262,12 +263,64 @@ class RangeHistogramThread(QThread):
             traceback.print_exc()
             self.error.emit(str(e))
 
+class RoundedPlotWidget(pg.PlotWidget):
+    def __init__(self, parent=None, **kwargs):
+        super().__init__(parent=parent, **kwargs)
+        self._corner_radius = 16.0
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        try:
+            r = self.rect()
+            if r.width() > 0 and r.height() > 0:
+                path = QPainterPath()
+                path.addRoundedRect(QRectF(r), self._corner_radius, self._corner_radius)
+                poly = path.toFillPolygon().toPolygon()
+                self.setMask(QRegion(poly))
+                vp = self.viewport()
+                if vp is not None:
+                    vr = vp.rect()
+                    vpath = QPainterPath()
+                    vpath.addRoundedRect(QRectF(vr), self._corner_radius, self._corner_radius)
+                    vp.setMask(QRegion(vpath.toFillPolygon().toPolygon()))
+        except Exception:
+            pass
+
 
 class HistogramViewer(QWidget):
     mode_changed = pyqtSignal()
     bandFocused = pyqtSignal(object)
     focusCleared = pyqtSignal()
     minmax_updated = pyqtSignal(int, int)  # Emits min_val, max_val
+
+    def _is_dark_theme(self):
+        from utils import is_dark_theme
+        return is_dark_theme()
+
+    def _create_pill_capsule(self, layout):
+        card = QWidget()
+        card.setObjectName("pill_card")
+        dark = self._is_dark_theme()
+        if dark:
+            card.setStyleSheet("""
+                QWidget#pill_card {
+                    background-color: rgba(30, 34, 40, 0.65);
+                    border: 1px solid rgba(255, 255, 255, 0.08);
+                    border-radius: 8px;
+                }
+            """)
+        else:
+            card.setStyleSheet("""
+                QWidget#pill_card {
+                    background-color: rgba(255, 255, 255, 0.9);
+                    border: 1px solid rgba(0, 0, 0, 0.12);
+                    border-radius: 8px;
+                }
+            """)
+        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setSpacing(8)
+        card.setLayout(layout)
+        return card
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -283,6 +336,11 @@ class HistogramViewer(QWidget):
         self.single_frame_radio.setChecked(True)
 
         self.frame_range_radio = QRadioButton("Frame Range")
+        
+        self.freehand_btn = QPushButton("Freehand")
+        self.freehand_btn.setToolTip("Toggle smooth curves (Freehand) vs Stepline")
+        self.freehand_btn.setCheckable(True)
+        self.freehand_btn.setChecked(True)
 
         self.show_all_btn = QPushButton("Show All")
         self.show_all_btn.setToolTip("Show all histogram curves")
@@ -310,6 +368,7 @@ class HistogramViewer(QWidget):
         try:
             self.single_frame_radio.toggled.connect(lambda checked: self.mode_changed.emit() if checked else None)
             self.frame_range_radio.toggled.connect(lambda checked: self.mode_changed.emit() if checked else None)
+            self.freehand_btn.toggled.connect(self._on_freehand_toggled)
         except Exception:
             pass
 
@@ -335,12 +394,26 @@ class HistogramViewer(QWidget):
         plot_row = QWidget(left_panel)
         self._plot_row = plot_row  # Store for later alignment calculations
         plot_row_layout = QHBoxLayout(plot_row)
-        plot_row_layout.setContentsMargins(0, 0, 0, 0)
+        plot_row_layout.setContentsMargins(4, 4, 4, 4)
         plot_row_layout.setSpacing(2)
 
-        self.plot = pg.PlotWidget(self)
+        self.plot = RoundedPlotWidget(self, background='transparent')
+        self.plot.setFrameShape(QFrame.NoFrame)
+        self.plot.setAttribute(Qt.WA_StyledBackground, True)
         self.plot.setMinimumHeight(160)
         self.plot.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        bg_color = "#0a0b0c" if self._is_dark_theme() else "#ffffff"
+        self.plot.setStyleSheet(f"""
+            QGraphicsView {{
+                background-color: {bg_color};
+                border-radius: 16px;
+                border: 1px solid rgba(128, 128, 128, 0.25);
+            }}
+            QGraphicsView::viewport {{
+                background-color: {bg_color};
+                border-radius: 16px;
+            }}
+        """)
         self.plot_item = self.plot.getPlotItem()
         self.plot_item.setAspectLocked(False)
         self.plot_item.setMouseEnabled(x=False, y=False)
@@ -419,15 +492,23 @@ class HistogramViewer(QWidget):
 
         control_layout = QHBoxLayout()
         control_layout.setContentsMargins(0, 0, 0, 0)
+        control_layout.setSpacing(8)
         control_layout.addWidget(self.single_frame_radio)
         control_layout.addWidget(self.frame_range_radio)
+        control_layout.addWidget(self.freehand_btn)
         control_layout.addWidget(self.show_all_btn)
         control_layout.addWidget(self.zoom_in_btn)
         control_layout.addWidget(self.zoom_out_btn)
         control_layout.addWidget(self.hist_table_btn)
         control_layout.addWidget(self.hist_fs_btn)
-        control_layout.addStretch()
-        main_layout.addLayout(control_layout)
+
+        hist_capsule = self._create_pill_capsule(control_layout)
+
+        bottom_bar_layout = QHBoxLayout()
+        bottom_bar_layout.setContentsMargins(4, 4, 4, 4)
+        bottom_bar_layout.addWidget(hist_capsule)
+        bottom_bar_layout.addStretch()
+        main_layout.addLayout(bottom_bar_layout)
 
         self.min_val = 255
         self.max_val = 0
@@ -517,8 +598,18 @@ class HistogramViewer(QWidget):
             selection_bg = "#80c9f4"
 
         self._axis_color_hex = axis
-        self.plot.setBackground(bg)
-        self.plot.setStyleSheet(f"border: 1px solid {border}; border-radius: 6px;")
+        self.plot.setBackground('transparent')
+        self.plot.setStyleSheet(f"""
+            QGraphicsView {{
+                background-color: {bg};
+                border: 1px solid {border};
+                border-radius: 16px;
+            }}
+            QGraphicsView::viewport {{
+                background-color: {bg};
+                border-radius: 16px;
+            }}
+        """)
         self.plot_item.showGrid(x=True, y=True, alpha=grid_alpha / 255.0)
         self.plot_item.setLabel("bottom", "Pixel Value", color=axis)
         self.plot_item.setLabel("left", "Count", color=axis)
@@ -998,6 +1089,12 @@ class HistogramViewer(QWidget):
             self.hist_table_btn.blockSignals(False)
         self._apply_plot_ratio()
 
+    def _on_freehand_toggled(self, checked):
+        if hasattr(self, 'freehand_btn'):
+            self.freehand_btn.setText("Freehand" if checked else "Stepline")
+        if hasattr(self, '_last_band_histograms') and self._last_band_histograms:
+            self.set_histograms(self._last_band_histograms, getattr(self, '_last_title_text', ""))
+
     def _on_toggle_table_clicked(self, checked):
         # checked=True means "table hidden" for this button semantics.
         self._set_hist_table_visible(not bool(checked))
@@ -1264,6 +1361,8 @@ class HistogramViewer(QWidget):
             self.stats_table.setRowHeight(r, row_h)
 
     def set_histograms(self, band_histograms, title_text):
+        self._last_band_histograms = band_histograms
+        self._last_title_text = title_text
         previous_focus = self._focused_band
         previous_selected = set(getattr(self, "_selected_bands", set()))
         self._focused_band = None
@@ -1292,12 +1391,19 @@ class HistogramViewer(QWidget):
                     dx = 1.0
             else:
                 dx = 1.0
-            x_edges = np.empty(x.size + 1, dtype=np.float64)
-            x_edges[:-1] = x - (dx * 0.5)
-            x_edges[-1] = x[-1] + (dx * 0.5)
+            is_freehand = getattr(self, 'freehand_btn', None) is not None and self.freehand_btn.isChecked()
+            
+            if is_freehand:
+                x_edges = x
+                curve = pg.PlotCurveItem(pen=self._make_pen(color, width=2, alpha=255), antialias=True)
+                curve.setData(x=x_edges, y=y)
+            else:
+                x_edges = np.empty(x.size + 1, dtype=np.float64)
+                x_edges[:-1] = x - (dx * 0.5)
+                x_edges[-1] = x[-1] + (dx * 0.5)
+                curve = pg.PlotCurveItem(pen=self._make_pen(color, width=2, alpha=255), antialias=False)
+                curve.setData(x=x_edges, y=y, stepMode=True)
 
-            curve = pg.PlotCurveItem(pen=self._make_pen(color, width=2, alpha=255), antialias=False)
-            curve.setData(x=x_edges, y=y, stepMode=True)
             try:
                 curve.setClickable(True, width=9)
                 curve.sigClicked.connect(lambda *_, b=band: self._on_curve_clicked(b))
@@ -1306,8 +1412,11 @@ class HistogramViewer(QWidget):
             self.plot_item.addItem(curve)
             # create an invisible baseline and a translucent fill between curve and baseline
             try:
-                baseline = pg.PlotCurveItem(pen=pg.mkPen((0, 0, 0, 0)), antialias=False)
-                baseline.setData(x=x_edges, y=np.zeros_like(y), stepMode=True)
+                baseline = pg.PlotCurveItem(pen=pg.mkPen((0, 0, 0, 0)), antialias=is_freehand)
+                if is_freehand:
+                    baseline.setData(x=x_edges, y=np.zeros_like(y))
+                else:
+                    baseline.setData(x=x_edges, y=np.zeros_like(y), stepMode=True)
                 baseline.setVisible(False)
                 self.plot_item.addItem(baseline)
                 brush = pg.mkBrush(color.red(), color.green(), color.blue(), 80)
@@ -1781,6 +1890,35 @@ class HistogramViewer(QWidget):
         self.max_val = 0
 
 class PixelInfoBox(QWidget):
+    def _is_dark_theme(self):
+        from utils import is_dark_theme
+        return is_dark_theme()
+
+    def _create_pill_capsule(self, layout):
+        card = QWidget()
+        card.setObjectName("pill_card")
+        dark = self._is_dark_theme()
+        if dark:
+            card.setStyleSheet("""
+                QWidget#pill_card {
+                    background-color: rgba(30, 34, 40, 0.65);
+                    border: 1px solid rgba(255, 255, 255, 0.08);
+                    border-radius: 8px;
+                }
+            """)
+        else:
+            card.setStyleSheet("""
+                QWidget#pill_card {
+                    background-color: rgba(255, 255, 255, 0.9);
+                    border: 1px solid rgba(0, 0, 0, 0.12);
+                    border-radius: 8px;
+                }
+            """)
+        layout.setContentsMargins(6, 4, 6, 4)
+        layout.setSpacing(5)
+        card.setLayout(layout)
+        return card
+
     def __init__(self, parent=None, matrix_size_var=None):
         super().__init__(parent)
         self.matrix_size_var = matrix_size_var
@@ -1790,13 +1928,26 @@ class PixelInfoBox(QWidget):
         self._is_floating = False
         self._drag_pos = None
 
-        layout = QVBoxLayout()
-        self.setLayout(layout)
+        main_layout = QVBoxLayout()
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(4)
+        self.setLayout(main_layout)
 
-        control_layout = QHBoxLayout()
-        layout.addLayout(control_layout)
+        top_row = QHBoxLayout()
+        top_row.setContentsMargins(0, 0, 0, 0)
 
-        control_layout.addWidget(QLabel("Matrix Size:"))
+        title_lbl = QLabel("Pixel Info")
+        title_lbl.setStyleSheet("font-weight: 600;")
+        top_row.addWidget(title_lbl)
+        top_row.addStretch()
+
+        matrix_inner = QHBoxLayout()
+        matrix_inner.setContentsMargins(0, 0, 0, 0)
+        matrix_inner.setSpacing(4)
+
+        matrix_lbl = QLabel("Matrix Size:")
+        matrix_inner.addWidget(matrix_lbl)
+
         self.size_combo = QComboBox()
         self.size_combo.addItems(["3", "5", "7", "9"])
         try:
@@ -1804,15 +1955,19 @@ class PixelInfoBox(QWidget):
         except Exception:
             pass
         self.size_combo.currentTextChanged.connect(lambda v: self.matrix_size_var.setValue(int(v)))
-        control_layout.addWidget(self.size_combo)
+        matrix_inner.addWidget(self.size_combo)
 
-        layout.addWidget(QLabel("Pixel Info"))
+        matrix_capsule = self._create_pill_capsule(matrix_inner)
+        top_row.addWidget(matrix_capsule)
+
+        main_layout.addLayout(top_row)
+
         self.info_text = QTextEdit()
         self.info_text.setReadOnly(True)
         self.info_text.setFontFamily("Consolas")
         self.info_text.setFontPointSize(9)
         self.info_text.setFixedHeight(250)
-        layout.addWidget(self.info_text)
+        main_layout.addWidget(self.info_text)
 
         self.last_x = None
         self.last_y = None

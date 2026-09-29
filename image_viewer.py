@@ -1,7 +1,7 @@
 
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QDialog, QStyle, QShortcut,
-    QGraphicsView, QGraphicsScene, QGraphicsPixmapItem, QSizePolicy,
+    QGraphicsView, QGraphicsScene, QGraphicsPixmapItem, QSizePolicy, QFrame,
     QTabWidget, QLabel, QPushButton, QSpinBox, QComboBox, QCheckBox, QToolButton,
     QRadioButton, QGroupBox, QScrollArea, QTextEdit, QSlider, QLineEdit,
     QFileDialog, QMessageBox, QDoubleSpinBox, QFormLayout, QTabBar, QButtonGroup, QTreeWidget, QTreeWidgetItem,
@@ -100,6 +100,7 @@ class MagnifierGraphicsView(QGraphicsView):
         self.last_update_time = 0
         self.update_interval = 32
         self.setCacheMode(QGraphicsView.CacheBackground) # Cache background for faster redraws
+        self.setFrameShape(QFrame.NoFrame)
         self.interaction_mode = "off"  # off | measure | calculate
         self.measure_enabled = False
         self.calculate_enabled = False
@@ -1462,6 +1463,53 @@ class MagnifierGraphicsView(QGraphicsView):
             finally:
                 painter.end()
 
+        # === Draw Smooth Curved Corners & Subtle Border on Canvas ===
+        vp = self.viewport()
+        vp_rect = QRectF(vp.rect())
+        if vp_rect.width() > 24 and vp_rect.height() > 24:
+            painter = QPainter(vp)
+            try:
+                painter.setRenderHint(QPainter.Antialiasing, True)
+                radius = 12.0
+
+                # Inverse mask (4 corner cutouts) - extend beyond viewport boundaries to eliminate edge trace
+                path = QPainterPath()
+                path.addRect(vp_rect.adjusted(-4.0, -4.0, 4.0, 4.0))
+                inner_path = QPainterPath()
+                inner_path.addRoundedRect(vp_rect, radius, radius)
+                corner_path = path.subtracted(inner_path)
+
+                # Determine background color of the surrounding container
+                parent_w = self.parent()
+                is_dark = True
+                if parent_w and hasattr(parent_w, '_is_dark_theme'):
+                    is_dark = parent_w._is_dark_theme()
+                elif hasattr(self, '_is_dark_theme'):
+                    is_dark = self._is_dark_theme()
+
+                bg_color = None
+                if parent_w is not None and parent_w.isVisible():
+                    try:
+                        pix = parent_w.grab(QRect(2, 2, 1, 1))
+                        c = pix.toImage().pixelColor(0, 0)
+                        if c.isValid() and c.alpha() > 0:
+                            bg_color = c
+                    except Exception:
+                        pass
+
+                if not bg_color or not bg_color.isValid():
+                    bg_color = QColor(56, 56, 56) if is_dark else QColor(245, 245, 247)
+
+                painter.fillPath(corner_path, QBrush(bg_color))
+
+                # Theme-aware subtle curved outline
+                border_color = QColor(255, 255, 255, 28) if is_dark else QColor(0, 0, 0, 30)
+                painter.setPen(QPen(border_color, 1.0))
+                painter.setBrush(Qt.NoBrush)
+                painter.drawRoundedRect(vp_rect.adjusted(0.5, 0.5, -0.5, -0.5), radius, radius)
+            finally:
+                painter.end()
+
     # ============ Annotation Layer ============
     def add_annotation(self, annotation_dict):
         """Add annotation: {"type": "arrow"|"text"|"rect"|"measure", "p1": ..., "p2": ..., "color": ..., "text": ...}"""
@@ -1576,6 +1624,100 @@ class MagnifierGraphicsView(QGraphicsView):
             print(f"Failed to load annotations: {e}")
 
 class GraphicsImageViewer(QWidget):
+    def _is_dark_theme(self):
+        from utils import is_dark_theme
+        return is_dark_theme()
+
+    def update_theme(self):
+        dark = self._is_dark_theme()
+        if hasattr(self, 'position_label') and self.position_label is not None:
+            self.position_label.setStyleSheet("color: #FFFFFF;" if dark else "color: #111111;")
+        if hasattr(self, 'magnifier_zoom_label') and self.magnifier_zoom_label is not None:
+            self.magnifier_zoom_label.setStyleSheet("color: #FFFFFF;" if dark else "color: #111111;")
+        if hasattr(self, '_apply_interaction_mode_func') and callable(self._apply_interaction_mode_func):
+            mode = getattr(self, '_current_interaction_mode', 'off')
+            self._apply_interaction_mode_func(mode)
+        if hasattr(self, 'graphics_view') and self.graphics_view is not None:
+            self.graphics_view.viewport().update()
+
+    @staticmethod
+    def _btn_style(bg_color: str, text_color: str = "white", hover_factor: float = 1.12) -> str:
+        """Return a complete QPushButton QSS for a pill-shaped status button."""
+        return (
+            f"QPushButton {{"
+            f"  background-color: {bg_color};"
+            f"  color: {text_color};"
+            f"  border: none;"
+            f"  border-radius: 5px;"
+            f"  padding: 1px 8px;"
+            f"  font-size: 11px;"
+            f"  font-weight: 500;"
+            f"  min-height: 20px;"
+            f"  max-height: 20px;"
+            f"}}"
+            f"QPushButton:hover {{"
+            f"  background-color: {bg_color};"
+            f"  opacity: 0.85;"
+            f"  border: 1px solid rgba(255,255,255,0.25);"
+            f"}}"
+            f"QPushButton:pressed {{"
+            f"  background-color: {bg_color};"
+            f"  border: 1px solid rgba(255,255,255,0.45);"
+            f"}}"
+        )
+
+    @staticmethod
+    def _tool_btn_style(bg_color: str, text_color: str = "white") -> str:
+        """Return a complete QToolButton QSS for a pill-shaped status button."""
+        return (
+            f"QToolButton {{"
+            f"  background-color: {bg_color};"
+            f"  color: {text_color};"
+            f"  border: none;"
+            f"  border-radius: 5px;"
+            f"  padding: 1px 8px;"
+            f"  font-size: 11px;"
+            f"  font-weight: 500;"
+            f"  min-height: 20px;"
+            f"  max-height: 20px;"
+            f"}}"
+            f"QToolButton:hover {{"
+            f"  background-color: {bg_color};"
+            f"  border: 1px solid rgba(255,255,255,0.25);"
+            f"}}"
+            f"QToolButton:pressed {{"
+            f"  background-color: {bg_color};"
+            f"  border: 1px solid rgba(255,255,255,0.45);"
+            f"}}"
+        )
+
+
+    def _create_pill_capsule(self, layout):
+        card = QWidget()
+        card.setObjectName("pill_card")
+        dark = self._is_dark_theme()
+        if dark:
+            card.setStyleSheet("""
+                QWidget#pill_card {
+                    background-color: rgba(30, 34, 40, 0.65);
+                    border: 1px solid rgba(255, 255, 255, 0.08);
+                    border-radius: 8px;
+                }
+            """)
+        else:
+            card.setStyleSheet("""
+                QWidget#pill_card {
+                    background-color: rgba(255, 255, 255, 0.9);
+                    border: 1px solid rgba(0, 0, 0, 0.12);
+                    border-radius: 8px;
+                }
+            """)
+        layout.setContentsMargins(6, 4, 6, 4)
+        layout.setSpacing(5)
+        card.setLayout(layout)
+        card.setFixedHeight(30)
+        return card
+
     def __init__(self, parent=None, pixel_info_callback=None, matrix_size_var=None, click_callback=None):
         super().__init__(parent)
         self.click_callback = click_callback
@@ -1598,7 +1740,8 @@ class GraphicsImageViewer(QWidget):
         self.frame_items = [] # For local rotation frames
         self.frame_group = None
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 0, 0, 10)
+        layout.setContentsMargins(8, 6, 8, 6)
+        layout.setSpacing(4)
 
         # Control bar
         control_bar = QHBoxLayout()
@@ -1610,6 +1753,8 @@ class GraphicsImageViewer(QWidget):
         self.scene = QGraphicsScene(self)
         self.graphics_view = MagnifierGraphicsView(self)
         self.graphics_view.setScene(self.scene)
+        self.graphics_view.setFrameShape(QFrame.NoFrame)
+        self.graphics_view.setStyleSheet("QGraphicsView { border: none; background-color: transparent; border-radius: 16px; }")
         # Ensure scrollbars are available when rotated/zoomed content exceeds the viewport
         self.graphics_view.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.graphics_view.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
@@ -1617,11 +1762,13 @@ class GraphicsImageViewer(QWidget):
         self.mouse_zoom_enabled = False # toggled by Mouse Zoom checkbox
 
         self.bottom_bar_widget = QWidget(self)
+        self.bottom_bar_widget.setStyleSheet("background: transparent;")
         self.bottom_bar_widget.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        self.bottom_bar_widget.setFixedHeight(32)
         bottom_bar = QHBoxLayout(self.bottom_bar_widget)
         bottom_bar.setContentsMargins(0, 0, 0, 0)
+        bottom_bar.setSpacing(6)
         self._bottom_layout = bottom_bar
-        bottom_bar.addStretch()
 
 
         self.interaction_modes = ["off", "measure", "calculate"]
@@ -1632,15 +1779,24 @@ class GraphicsImageViewer(QWidget):
             "both": "Ruler + Stats",
         }
         self.interaction_mode_styles = {
-            "off": "background-color: #E57373; color: white;",
-            "measure": "background-color: #4CAF50; color: white;",
-            "calculate": "background-color: #FF9800; color: white;",
-            "both": "background-color: #8E24AA; color: white;",
+            "off":       self._btn_style("#E57373"),
+            "measure":   self._btn_style("#4CAF50"),
+            "calculate": self._btn_style("#FF9800"),
+            "both":      self._btn_style("#8E24AA"),
         }
+        # Same colours but for QToolButton (the Toolbox button is a QToolButton)
+        self.toolbox_mode_styles = {
+            "off":       self._tool_btn_style("#E57373"),
+            "measure":   self._tool_btn_style("#4CAF50"),
+            "calculate": self._tool_btn_style("#FF9800"),
+            "both":      self._tool_btn_style("#8E24AA"),
+        }
+        self._current_interaction_mode = "off"
         def _apply_interaction_mode(mode: str):
             mode = str(mode).lower()
             if mode not in self.interaction_mode_labels:
                 mode = "off"
+            self._current_interaction_mode = mode
             try:
                 self.graphics_view.set_interaction_mode(mode)
                 # update toolbox visual (if exists)
@@ -1649,12 +1805,28 @@ class GraphicsImageViewer(QWidget):
                     if hasattr(self, 'toolbox_status_label'):
                         try:
                             self.toolbox_status_label.setText(self.interaction_mode_labels[mode])
-                            # Try to apply style if possible
-                            self.toolbox_status_label.setStyleSheet(self.interaction_mode_styles[mode] + " padding-left:6px; font-weight:600;")
+                            dark = self._is_dark_theme()
+                            if dark:
+                                label_colors = {
+                                    "off":       "color: #FFFFFF;",
+                                    "measure":   "color: #4CAF50;",
+                                    "calculate": "color: #FF9800;",
+                                    "both":      "color: #CE93D8;",
+                                }
+                            else:
+                                label_colors = {
+                                    "off":       "color: #111111;",
+                                    "measure":   "color: #1B5E20;",
+                                    "calculate": "color: #E65100;",
+                                    "both":      "color: #4A148C;",
+                                }
+                            self.toolbox_status_label.setStyleSheet(
+                                label_colors.get(mode, label_colors["off"]) + " padding-left:6px; font-weight:700;"
+                            )
                         except Exception:
                             pass
                     try:
-                        self.toolbox_btn.setStyleSheet(self.interaction_mode_styles[mode])
+                        self.toolbox_btn.setStyleSheet(self.toolbox_mode_styles[mode])
                     except Exception:
                         pass
                 app = self.get_app()
@@ -1668,16 +1840,28 @@ class GraphicsImageViewer(QWidget):
             except Exception:
                 pass
 
+        self._apply_interaction_mode_func = _apply_interaction_mode
+
+
 
         self.toolbox_btn = ToolboxButton()
         self.toolbox_btn.set_internal_text("Toolbox")
         self.toolbox_btn.setToolTip("Toolbox: choose Spatial Ruler and/or ROI Statistics")
-        self.toolbox_btn.setStyleSheet(self.interaction_mode_styles['off'])
-        bottom_bar.addWidget(self.toolbox_btn)
-        # status label next to toolbox showing current selection
+        self.toolbox_btn.setFixedHeight(20)
+        self.toolbox_btn.setStyleSheet(self.toolbox_mode_styles['off'])
         self.toolbox_status_label = QLabel(self.interaction_mode_labels['off'])
-        self.toolbox_status_label.setStyleSheet("color: white; padding-left:6px; font-weight:600;")
-        bottom_bar.addWidget(self.toolbox_status_label)
+        self.toolbox_status_label.setFixedHeight(20)
+        _tb_off_color = "color: rgba(255,255,255,0.65);" if self._is_dark_theme() else "color: rgba(60,60,60,0.75);"
+        self.toolbox_status_label.setStyleSheet(_tb_off_color + " padding-left:4px; font-weight:600;")
+
+        tb_inner = QHBoxLayout()
+        tb_inner.setContentsMargins(0, 0, 0, 0)
+        tb_inner.setSpacing(3)
+        tb_inner.addWidget(self.toolbox_btn)
+        tb_inner.addWidget(self.toolbox_status_label)
+        self.toolbox_capsule = self._create_pill_capsule(tb_inner)
+        bottom_bar.addWidget(self.toolbox_capsule)
+
         # Backwards compatibility: some external code references `measure_mode_btn`
         self.measure_mode_btn = self.toolbox_btn
         self.toolbox_menu = QMenu(self)
@@ -1729,15 +1913,21 @@ class GraphicsImageViewer(QWidget):
 
         self.toolbox_btn.clicked.connect(_show_tool_menu)
         _apply_interaction_mode("off")
-        self.magnifier_toggle = QCheckBox("Magnifier")
-        bottom_bar.addWidget(self.magnifier_toggle)
+
+        # Magnifier toggle — QPushButton (not a QCheckBox) for consistent look
+        self.magnifier_toggle = QPushButton("Magnifier: Off")
+        self.magnifier_toggle.setCheckable(True)
+        self.magnifier_toggle.setToolTip("Toggle magnifier lens")
+        self.magnifier_toggle.setFixedHeight(20)
+        self.magnifier_toggle.setStyleSheet(self._btn_style("#E57373"))  # red = Off
 
         # 3-State Magnifier Mode Selector ("Off", "Contrast", "Torch")
         self.magnifier_mode_combo = QComboBox()
         self.magnifier_mode_combo.addItems(["Off", "Contrast", "Torch"])
         self.magnifier_mode_combo.setToolTip("Magnifier mode: Off, Contrast, or Torch")
+        self.magnifier_mode_combo.setFixedHeight(20)
+        self.magnifier_mode_combo.setStyleSheet("QComboBox { font-size: 11px; padding: 0px 4px; min-height: 20px; max-height: 20px; }")
         self.magnifier_mode_combo.hide()
-        bottom_bar.addWidget(self.magnifier_mode_combo)
 
         # Retain torch_toggle for backwards compatibility
         self.torch_toggle = QCheckBox("Torch")
@@ -1767,9 +1957,13 @@ class GraphicsImageViewer(QWidget):
                     self.magnifier_toggle.setChecked(False)
                     self.magnifier_toggle.blockSignals(False)
                     return
+                self.magnifier_toggle.setText("Magnifier: On")
+                self.magnifier_toggle.setStyleSheet(self._btn_style("#4CAF50"))  # green = On
                 self.magnifier_mode_combo.show()
                 self.magnifier_mode_combo.setEnabled(True)
             else:
+                self.magnifier_toggle.setText("Magnifier: Off")
+                self.magnifier_toggle.setStyleSheet(self._btn_style("#E57373"))  # red = Off
                 self.magnifier_mode_combo.blockSignals(True)
                 self.magnifier_mode_combo.setCurrentText("Off")
                 self.magnifier_mode_combo.blockSignals(False)
@@ -1785,61 +1979,93 @@ class GraphicsImageViewer(QWidget):
                 pass
         self.magnifier_toggle.toggled.connect(_on_magnifier_toggled)
         self.magnifier_zoom_label = QLabel("Magnifier Zoom:")
-        bottom_bar.addWidget(self.magnifier_zoom_label)
+        self.magnifier_zoom_label.setFixedHeight(20)
         self.magnifier_zoom_slider = QSlider(Qt.Horizontal)
         self.magnifier_zoom_slider.setRange(10, 500) # value/10 -> 1.0x .. 50.0x
         self.magnifier_zoom_slider.setValue(80) # default 8.0x
-        bottom_bar.addWidget(self.magnifier_zoom_slider)
-        bottom_bar.addSpacing(20)
-        # zoom buttons
+        self.magnifier_zoom_slider.setFixedHeight(16)
+
+        mag_inner = QHBoxLayout()
+        mag_inner.setContentsMargins(0, 0, 0, 0)
+        mag_inner.setSpacing(4)
+        mag_inner.addWidget(self.magnifier_toggle)
+        mag_inner.addWidget(self.magnifier_mode_combo)
+        mag_inner.addWidget(self.magnifier_zoom_label)
+        mag_inner.addWidget(self.magnifier_zoom_slider)
+        self.magnifier_capsule = self._create_pill_capsule(mag_inner)
+        bottom_bar.addWidget(self.magnifier_capsule)
+        # zoom buttons capsule
+        _zoom_style = self._btn_style("#546E7A")   # blue-grey neutral
         self.zoom_out_btn = QPushButton("Zoom Out")
         self.zoom_out_btn.setToolTip("Zoom out")
-        bottom_bar.addWidget(self.zoom_out_btn)
+        self.zoom_out_btn.setFixedHeight(20)
+        self.zoom_out_btn.setStyleSheet(_zoom_style)
         self.reset_zoom_btn = QPushButton("Reset")
         self.reset_zoom_btn.setToolTip("Reset to 100%")
-        bottom_bar.addWidget(self.reset_zoom_btn)
+        self.reset_zoom_btn.setFixedHeight(20)
+        self.reset_zoom_btn.setStyleSheet(_zoom_style)
         self.zoom_in_btn = QPushButton("Zoom In")
         self.zoom_in_btn.setToolTip("Zoom in")
-        bottom_bar.addWidget(self.zoom_in_btn)
-        # Mouse Zoom toggle
+        self.zoom_in_btn.setFixedHeight(20)
+        self.zoom_in_btn.setStyleSheet(_zoom_style)
+
+        zoom_inner = QHBoxLayout()
+        zoom_inner.setContentsMargins(0, 0, 0, 0)
+        zoom_inner.setSpacing(4)
+        zoom_inner.addWidget(self.zoom_out_btn)
+        zoom_inner.addWidget(self.reset_zoom_btn)
+        zoom_inner.addWidget(self.zoom_in_btn)
+        self.zoom_capsule = self._create_pill_capsule(zoom_inner)
+        bottom_bar.addWidget(self.zoom_capsule)
+
+        # Mouse Zoom toggle capsule
         self.mouse_zoom_btn = QPushButton("Mouse Zoom: Off")
         self.mouse_zoom_btn.setCheckable(True)
         self.mouse_zoom_btn.setToolTip("Toggle wheel zoom")
-        self.mouse_zoom_btn.setStyleSheet("background-color: #E57373; color: white;") # default red (OFF)
-        bottom_bar.addWidget(self.mouse_zoom_btn)
+        self.mouse_zoom_btn.setFixedHeight(20)
+        self.mouse_zoom_btn.setStyleSheet(self._btn_style("#E57373"))  # default red (OFF)
         def toggle_mouse_zoom():
             self.mouse_zoom_enabled = not self.mouse_zoom_enabled
             if self.mouse_zoom_enabled:
                 self.mouse_zoom_btn.setText("Mouse Zoom: On")
-                self.mouse_zoom_btn.setStyleSheet("background-color: #4CAF50; color: white;") # green (ON)
+                self.mouse_zoom_btn.setStyleSheet(self._btn_style("#4CAF50"))  # green (ON)
             else:
                 self.mouse_zoom_btn.setText("Mouse Zoom: Off")
-                self.mouse_zoom_btn.setStyleSheet("background-color: #E57373; color: white;") # red (OFF)
+                self.mouse_zoom_btn.setStyleSheet(self._btn_style("#E57373"))  # red (OFF)
         self.mouse_zoom_btn.clicked.connect(toggle_mouse_zoom)
-        # Flip mode cycle
+
+        mz_inner = QHBoxLayout()
+        mz_inner.setContentsMargins(0, 0, 0, 0)
+        mz_inner.setSpacing(4)
+        mz_inner.addWidget(self.mouse_zoom_btn)
+        self.mouse_zoom_capsule = self._create_pill_capsule(mz_inner)
+        bottom_bar.addWidget(self.mouse_zoom_capsule)
+
+        # Flip & Rotate capsule
         self.flip_mode_btn = QPushButton("Flip: Off")
         self.flip_mode_btn.setCheckable(True)
         self.flip_mode_btn.setToolTip("Cycle flip mode")
-        self.flip_mode_btn.setStyleSheet("background-color: #E57373; color: white;") # default red (OFF)
-        bottom_bar.addWidget(self.flip_mode_btn)
+        self.flip_mode_btn.setFixedHeight(20)
+        self.flip_mode_btn.setStyleSheet(self._btn_style("#E57373"))  # default red (OFF)
         self.flip_mode = 0
         self.flip_labels = ["Flip: Off", "Flip: Select", "Flip: Select All"]
         def cycle_flip_mode():
             self.flip_mode = (self.flip_mode + 1) % 3
             self.flip_mode_btn.setText(self.flip_labels[self.flip_mode])
-            if self.flip_mode == 0: # Off
-                self.flip_mode_btn.setStyleSheet("background-color: #E57373; color: white;") # red
-            elif self.flip_mode == 1: # Select
-                self.flip_mode_btn.setStyleSheet("background-color: #81C784; color: white;") # pale green
-            else: # Select All
-                self.flip_mode_btn.setStyleSheet("background-color: #2E7D32; color: white;") # dark green
+            if self.flip_mode == 0:    # Off
+                self.flip_mode_btn.setStyleSheet(self._btn_style("#E57373"))   # red
+            elif self.flip_mode == 1:  # Select
+                self.flip_mode_btn.setStyleSheet(self._btn_style("#81C784"))   # pale green
+            else:                      # Select All
+                self.flip_mode_btn.setStyleSheet(self._btn_style("#2E7D32"))   # dark green
         self.flip_mode_btn.clicked.connect(cycle_flip_mode)
+
         # Rotation toggle
         self.rotation_mode_btn = QPushButton("Rotate: Off")
         self.rotation_mode_btn.setCheckable(True)
         self.rotation_mode_btn.setToolTip("Cycle rotation mode")
-        self.rotation_mode_btn.setStyleSheet("background-color: #E57373; color: white;") # default red (OFF)
-        bottom_bar.addWidget(self.rotation_mode_btn)
+        self.rotation_mode_btn.setFixedHeight(20)
+        self.rotation_mode_btn.setStyleSheet(self._btn_style("#E57373"))  # default red (OFF)
         self.rotation_mode = 0
         self.rotation_labels = ["Rotate: Off", "Rotate: Global", "Rotate: Local"]
         def cycle_rotation_mode():
@@ -1847,10 +2073,10 @@ class GraphicsImageViewer(QWidget):
             self.rotation_mode = (self.rotation_mode + 1) % 3
             self.rotation_mode_btn.setText(self.rotation_labels[self.rotation_mode])
             if self.rotation_mode == 0:
-                self.rotation_mode_btn.setStyleSheet("background-color: #E57373; color: white;")
+                self.rotation_mode_btn.setStyleSheet(self._btn_style("#E57373"))
                 self.rotation_overlay.hide()
             elif self.rotation_mode == 1:
-                self.rotation_mode_btn.setStyleSheet("background-color: #4CAF50; color: white;")
+                self.rotation_mode_btn.setStyleSheet(self._btn_style("#4CAF50"))
                 self.rotation_overlay.show()
                 self._reposition_overlay()
                 if prev_mode == 2:
@@ -1866,7 +2092,7 @@ class GraphicsImageViewer(QWidget):
                 self.local_rotation_value_label.hide()
                 self._apply_item_transform()
             else: # 2: Local
-                self.rotation_mode_btn.setStyleSheet("background-color: #2196F3; color: white;") # blue for local
+                self.rotation_mode_btn.setStyleSheet(self._btn_style("#2196F3"))  # blue for local
                 self.rotation_overlay.show()
                 self._reposition_overlay()
                 if prev_mode != 2:
@@ -1885,7 +2111,15 @@ class GraphicsImageViewer(QWidget):
                 self.local_rotation_value_label.show()
                 self._apply_local_rotation()
         self.rotation_mode_btn.clicked.connect(cycle_rotation_mode)
-        bottom_bar.addStretch()
+
+        orient_inner = QHBoxLayout()
+        orient_inner.setContentsMargins(0, 0, 0, 0)
+        orient_inner.setSpacing(4)
+        orient_inner.addWidget(self.flip_mode_btn)
+        orient_inner.addWidget(self.rotation_mode_btn)
+        self.orient_capsule = self._create_pill_capsule(orient_inner)
+        bottom_bar.addWidget(self.orient_capsule)
+
         layout.addWidget(self.bottom_bar_widget, 0, alignment=Qt.AlignHCenter)
         self._overlay_btn_margin = 12
         self.grid_btn = QPushButton("#", self.graphics_view.viewport())
@@ -1962,14 +2196,14 @@ class GraphicsImageViewer(QWidget):
                     data = json.load(sf)
                 is_dark = data.get('dark_mode', True)
                 if is_dark:
-                    bg_hex = data.get('bg_color_dark', '#13191C')
+                    bg_hex = data.get('bg_color_dark', '#000000')
                 else:
-                    bg_hex = data.get('bg_color_light', '#E0E0E0')
+                    bg_hex = data.get('bg_color_light', '#FFFFFF')
                 bg = QColor(bg_hex)
             else:
-                bg = QColor("#13191C") if is_dark else QColor("#E0E0E0")
+                bg = QColor("#000000") if is_dark else QColor("#FFFFFF")
         except Exception:
-            bg = QColor("#13191C") if is_dark else QColor("#E0E0E0")
+            bg = QColor("#000000") if is_dark else QColor("#FFFFFF")
 
         self._set_bg_color(bg, propagate=False)
 
@@ -1989,9 +2223,15 @@ class GraphicsImageViewer(QWidget):
         # Editor button (right side of bottom bar)
         self.editor_btn = QPushButton("Open Editor")
         self.editor_btn.setToolTip("Open editor")
+        self.editor_btn.setFixedHeight(20)
+        self.editor_btn.setStyleSheet(self._btn_style("#37474F"))  # dark blue-grey
         self.editor_btn.clicked.connect(self.open_editor)
-        bottom_bar.addWidget(self.editor_btn)
-        bottom_bar.addStretch()  # This already exists, but ensure it's after
+        ed_inner = QHBoxLayout()
+        ed_inner.setContentsMargins(0, 0, 0, 0)
+        ed_inner.setSpacing(4)
+        ed_inner.addWidget(self.editor_btn)
+        self.editor_capsule = self._create_pill_capsule(ed_inner)
+        bottom_bar.addWidget(self.editor_capsule)
         # connect signals (use existing graphics_view handlers for magnifier/torch/slider)
         self.torch_toggle.stateChanged.connect(lambda state: self.graphics_view.toggle_torch(state == Qt.Checked))
         self.magnifier_zoom_slider.valueChanged.connect(self.graphics_view.set_magnifier_zoom)
