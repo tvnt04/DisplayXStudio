@@ -1966,7 +1966,14 @@ class PixelInfoBox(QWidget):
         self.info_text.setReadOnly(True)
         self.info_text.setFontFamily("Consolas")
         self.info_text.setFontPointSize(9)
-        self.info_text.setFixedHeight(250)
+        screen = QApplication.primaryScreen()
+        screen_h = screen.availableGeometry().height() if screen else 1080
+        if screen_h <= 800:
+            self.info_text.setFixedHeight(95)
+        elif screen_h <= 900:
+            self.info_text.setFixedHeight(140)
+        else:
+            self.info_text.setFixedHeight(250)
         main_layout.addWidget(self.info_text)
 
         self.last_x = None

@@ -8,6 +8,7 @@ URL:            https://github.com/tvnt04/DisplayXStudio
 
 BuildArch:      x86_64
 AutoReqProv:    no
+Requires:       glibc, mesa-libGL, fontconfig, freetype, dbus-libs, libX11, libX11-xcb, libxcb, xcb-util-cursor, xcb-util-wm, xcb-util-image, xcb-util-keysyms, xcb-util-renderutil, libxkbcommon, libxkbcommon-x11
 %description
 Display X Studio multispectral display and analysis application.
 
@@ -19,6 +20,9 @@ cp -a %{_sourcedir}/Display-X-Studio/. \
 mkdir -p %{buildroot}/usr/bin
 cat > %{buildroot}/usr/bin/display-x-studio <<'SCRIPT'
 #!/bin/sh
+if [ -z "$QT_QPA_PLATFORM" ]; then
+    export QT_QPA_PLATFORM="xcb;wayland"
+fi
 exec "/opt/display-x-studio/Display X Studio" "$@"
 SCRIPT
 chmod 0755 %{buildroot}/usr/bin/display-x-studio

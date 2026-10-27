@@ -37,5 +37,9 @@ packaging/appimage/AppDir/
 packaging/tools/
 *.AppImage
 
+# Debian build artifacts
+packaging/deb/opt/
+*.deb
+
 # Local AppImage build workspace
 packaging/appimage/

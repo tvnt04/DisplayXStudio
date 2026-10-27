@@ -1270,12 +1270,22 @@ class BandStitchProApp(BandViewsMixin, QWidget):
                     border-radius: 10px;
                 }
             """)
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(6)
+        screen = QApplication.primaryScreen()
+        screen_h = screen.availableGeometry().height() if screen else 1080
+        if screen_h <= 850:
+            layout.setContentsMargins(10, 4, 10, 4)
+            layout.setSpacing(4)
+        else:
+            layout.setContentsMargins(10, 10, 10, 10)
+            layout.setSpacing(6)
         card.setLayout(layout)
         return card
 
     def init_ui(self):
+        screen = QApplication.primaryScreen()
+        screen_h = screen.availableGeometry().height() if screen else 1080
+        screen_w = screen.availableGeometry().width() if screen else 1920
+
         main_layout = QHBoxLayout()
         main_layout.setContentsMargins(5, 5, 5, 5)
         self.setLayout(main_layout)
@@ -1307,15 +1317,18 @@ class BandStitchProApp(BandViewsMixin, QWidget):
         """)
         self.left_panel = QWidget()
         left_layout = QVBoxLayout()
-        left_layout.setContentsMargins(8, 8, 16, 8)
-        left_layout.setSpacing(10)
+        spacing = 4 if screen_h <= 850 else 10
+        margins_v = 4 if screen_h <= 850 else 8
+        left_layout.setContentsMargins(8, margins_v, 16, margins_v)
+        left_layout.setSpacing(spacing)
         self.left_panel.setLayout(left_layout)
         self.left_scroll.setWidget(self.left_panel)
         if platform.system() == "Windows":
             self.left_scroll.setMinimumWidth(480)
             self.left_scroll.setMaximumWidth(580)
         else:
-            self.left_scroll.setMinimumWidth(440)
+            min_sidebar_w = 380 if screen_w <= 1366 else 440
+            self.left_scroll.setMinimumWidth(min_sidebar_w)
             self.left_scroll.setMaximumWidth(580)
         self.left_scroll.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         main_layout.addWidget(self.left_scroll)
@@ -1598,8 +1611,6 @@ class BandStitchProApp(BandViewsMixin, QWidget):
         actions_capsule = self._create_capsule(actions_capsule_layout)
         left_layout.addWidget(actions_capsule)
 
-        left_layout.addStretch()
-
         self.display_frame = QWidget()
         self.display_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         display_layout = QVBoxLayout()
@@ -1738,6 +1749,7 @@ class BandStitchProApp(BandViewsMixin, QWidget):
 
         self.pixel_info_box = PixelInfoBox(matrix_size_var=self.matrix_size_var)
         left_layout.addWidget(self.pixel_info_box)
+        left_layout.addStretch()
         self.start_frame_entry.valueChanged.connect(self.validate_frame_range)
         self.end_frame_entry.valueChanged.connect(self.validate_frame_range)
 

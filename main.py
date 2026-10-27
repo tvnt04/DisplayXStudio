@@ -1,3 +1,32 @@
+import os
+import sys
+
+# Configure Linux display platform compatibility before any PyQt5 modules are initialized
+if sys.platform.startswith("linux"):
+    if "QT_QPA_PLATFORM" not in os.environ:
+        is_wayland = (
+            os.environ.get("XDG_SESSION_TYPE") == "wayland"
+            or bool(os.environ.get("WAYLAND_DISPLAY"))
+        )
+        has_xcb = True
+        try:
+            import ctypes.util
+            # Check for common missing XCB libraries on modern Linux distros (e.g. Ubuntu 24.04)
+            if not ctypes.util.find_library("xcb-cursor") and not ctypes.util.find_library("xcb-xinerama"):
+                has_xcb = False
+        except Exception:
+            pass
+
+        if is_wayland:
+            # On GNOME Wayland, Qt 5 defaults to ignoring Wayland and falling back to xcb.
+            # If xcb libraries are missing, fallback to xcb crashes. We prioritize wayland in that case.
+            if not has_xcb:
+                os.environ["QT_QPA_PLATFORM"] = "wayland;xcb"
+            else:
+                os.environ["QT_QPA_PLATFORM"] = "xcb;wayland"
+        else:
+            os.environ["QT_QPA_PLATFORM"] = "xcb;wayland"
+
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QPushButton, QGridLayout,
     QLabel, QTabWidget, QSizePolicy, QToolButton, QShortcut, QTabBar, QProgressDialog,
@@ -73,6 +102,21 @@ except Exception as e:
 def _qt_message_handler(mode, context, message):
     # Suppress known benign startup warning emitted by some backends.
     if "QSocketNotifier: Can only be used with threads started with QThread" in message:
+        return
+    if "no Qt platform plugin could be initialized" in message or "Could not load the Qt platform plugin" in message:
+        sys.stderr.write(
+            "\n"
+            + "=" * 80 + "\n"
+            + "[Display X Studio - Graphics Platform Initialization Failed]\n"
+            + "Could not initialize the Qt graphics platform plugin.\n"
+            + "This typically occurs when required X11/XCB libraries are missing.\n\n"
+            + "To resolve this on Ubuntu / Debian / Linux Mint, run:\n"
+            + "    sudo apt update\n"
+            + "    sudo apt install -y libxcb-cursor0 libxcb-xinerama0 libxkbcommon-x11-0\n\n"
+            + "Or run directly in Wayland mode:\n"
+            + "    QT_QPA_PLATFORM=wayland display-x-studio\n"
+            + "=" * 80 + "\n\n"
+        )
         return
     print(message, file=sys.stderr)
 
@@ -1124,15 +1168,28 @@ class MainApp(QMainWindow):
                 f"Downloaded file is not a Debian package: {downloaded}"
             )
 
-        result = subprocess.run(
-            ["pkexec", "dpkg", "-i", str(downloaded)],
-            check=False,
-        )
+        # Try apt-get first so dependencies are automatically resolved
+        cmd = ["pkexec", "apt-get", "install", "-y", "--reinstall", str(downloaded)]
+        result = subprocess.run(cmd, check=False)
+
+        if result.returncode != 0 and result.returncode != 126:
+            # Fall back to dpkg if apt-get is unavailable
+            result = subprocess.run(
+                ["pkexec", "dpkg", "-i", str(downloaded)],
+                check=False,
+            )
 
         if result.returncode != 0:
+            if result.returncode == 126:
+                raise RuntimeError(
+                    f"Authentication cancelled or blocked by remote desktop/Wayland.\n\n"
+                    f"To complete the update, open terminal and run:\n"
+                    f"  sudo apt install -y \"{downloaded}\""
+                )
             raise RuntimeError(
-                f"Debian package installation failed "
-                f"(exit code {result.returncode})."
+                f"Debian package installation failed (exit code {result.returncode}).\n\n"
+                f"To install manually, open terminal and run:\n"
+                f"  sudo apt install -y \"{downloaded}\""
             )
 
         self._app_is_closing = True
@@ -1157,8 +1214,16 @@ class MainApp(QMainWindow):
         )
 
         if result.returncode != 0:
+            if result.returncode == 126:
+                raise RuntimeError(
+                    f"Authentication cancelled or blocked by remote desktop.\n\n"
+                    f"To install manually, open terminal and run:\n"
+                    f"  sudo rpm -U \"{downloaded}\""
+                )
             raise RuntimeError(
-                f"RPM package installation failed (exit code {result.returncode})."
+                f"RPM package installation failed (exit code {result.returncode}).\n\n"
+                f"To install manually, open terminal and run:\n"
+                f"  sudo rpm -U \"{downloaded}\""
             )
 
         self._app_is_closing = True

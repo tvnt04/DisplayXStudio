@@ -52,8 +52,22 @@ def main() -> int:
     print("Run the app with:")
     print(f"  {py} main.py")
     print()
-    print("If you are on Linux/macOS and need system packages for Qt/OpenCV,")
-    print("install those with your OS package manager before launching the app.")
+
+    if platform.system().lower() == "linux":
+        import ctypes.util
+        missing = []
+        for pkg, lib in [
+            ("libxcb-cursor0", "xcb-cursor"),
+            ("libxcb-xinerama0", "xcb-xinerama"),
+            ("libxkbcommon-x11-0", "xkbcommon-x11"),
+            ("libgl1", "GL"),
+        ]:
+            if not ctypes.util.find_library(lib):
+                missing.append(pkg)
+        if missing:
+            print("[Notice] Missing recommended system packages for Qt/GUI:", ", ".join(missing))
+            print("To install them on Debian/Ubuntu, run:")
+            print(f"  sudo apt update && sudo apt install -y {' '.join(missing)}\n")
     return 0
 
 

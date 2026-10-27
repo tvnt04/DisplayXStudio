@@ -147,6 +147,9 @@ jobs:
           cat > AppDir/AppRun <<'EOF'
           #!/bin/sh
           HERE="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+          if [ -z "$QT_QPA_PLATFORM" ]; then
+              export QT_QPA_PLATFORM="xcb;wayland"
+          fi
           exec "$HERE/usr/bin/Display X Studio" "$@"
           EOF
 
